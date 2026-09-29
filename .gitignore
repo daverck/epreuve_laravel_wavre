@@ -16,6 +16,9 @@
 /backend/storage/framework/views/*.php
 /backend/database/database.sqlite
 
+# Notes personnelles de révision (non versionnées dans le livrable Git)
+/docs/GUIDE_EXAMEN_ORAL.md
+
 # OS & IDE
 .DS_Store
 Thumbs.db

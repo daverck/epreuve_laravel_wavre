@@ -9,7 +9,7 @@
 
 1. [Réflexion Architecturale & Choix Techniques](#-1-réflexion-architecturale--choix-techniques)
    - [1.1 Analyse du besoin métier de la Ville de Wavre](#11-analyse-du-besoin-métier-de-la-ville-de-wavre)
-   - [1.2 Stratégie Temps Réel : Pourquoi le Short Polling HTTP REST (2s) ?](#12-stratégie-temps-réel--pourquoi-le-short-polling-http-rest-2s-)
+   - [1.2 Stratégie de Supervision : Pourquoi le Short Polling HTTP REST (2s) ?](#12-stratégie-de-supervision--pourquoi-le-short-polling-http-rest-2s-)
    - [1.3 Modélisation de la Base de Données Relationnelle](#13-modélisation-de-la-base-de-données-relationnelle)
    - [1.4 Ergonomie "Wallboard / NOC TV" & Alerte Visuelle Rapide](#14-ergonomie-wallboard--noc-tv--alerte-visuelle-rapide)
 2. [Consignes pour Lancer le Projet](#-2-consignes-pour-lancer-le-projet)
@@ -41,7 +41,7 @@ L'administration communale de la **Ville de Wavre** exploite une application int
 
 ---
 
-### 1.2 Stratégie Temps Réel : Pourquoi le Short Polling HTTP REST (2s) ?
+### 1.2 Stratégie de Supervision : Pourquoi le Short Polling HTTP REST (2s) ?
 
 Pour rafraîchir l'écran mural et détecter rapidement la déconnexion d'un microservice, nous avons comparé **Short Polling HTTP**, **Server-Sent Events (SSE)** et **WebSockets** selon les principes d'architecture **KISS** (*Keep It Simple, Stupid*) et **YAGNI** :
 
@@ -178,9 +178,7 @@ epreuve_lavarel_wavre/
 │   └── microservice-node/                  # Image des 5 vrais conteneurs Docker (core, mailing, carto, voirie, salle)
 ├── docs/
 │   ├── SCHEMA_RELATIONNEL.md               # Schéma relationnel BDD (Mermaid ERD + dictionnaire)
-│   ├── openapi.yaml                        # Contrat OpenAPI 3.0.3 complet
-│   └── GUIDE_EXAMEN_ORAL.md                # Guide de préparation à l'examen oral (Justification Polling vs SSE/WS)
-├── AGENTS.md & .agents/                    # Configuration des agents Antigravity (Backend & Frontend)
+│   └── openapi.yaml                        # Contrat OpenAPI 3.0.3 complet
 ├── docker-compose.yml                      # Orchestration complète des 8 conteneurs Docker
 └── README.md                               # Ce document (Réflexion, Lancement & Fonctionnalités)
 ```

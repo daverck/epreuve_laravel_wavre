@@ -3,14 +3,21 @@ info:
   title: API de Monitoring des Microservices — Ville de Wavre
   version: 1.0.0
   description: |
-    Contrat OpenAPI 3.0.3 pour la supervision temps réel (WebSockets RFC 6455) des 5 microservices Docker de la Ville de Wavre (`core`, `mailing`, `carto`, `voirie`, `salle`).
+    Contrat OpenAPI 3.0.3 pour la supervision par Short Polling HTTP REST (2s) des 5 microservices Docker de la Ville de Wavre (`core`, `mailing`, `carto`, `voirie`, `salle`).
 servers:
   - url: http://localhost:8000/api
     description: Serveur API Laravel (Docker)
 paths:
   /microservices:
     get:
-      summary: Liste l'état temps réel des 5 microservices et le résumé global d'alerte
+      summary: Liste l'état des 5 microservices, sonde les conteneurs Docker (/health) et retourne le résumé global d'alerte
+      parameters:
+        - name: probe
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: true
       responses:
         '200':
           description: État complet des microservices
@@ -29,7 +36,7 @@ paths:
           description: Détails du microservice
   /microservices/{slug}/simulate:
     post:
-      summary: Simule la déconnexion (DOWN), la dégradation (DEGRADED) ou la reconnexion (UP) et diffuse l'événement par WebSocket
+      summary: Simule la déconnexion (DOWN), la dégradation (DEGRADED) ou la reconnexion (UP) d'un microservice
       parameters:
         - name: slug
           in: path
@@ -52,7 +59,7 @@ paths:
                   type: string
       responses:
         '200':
-          description: Simulation appliquée et diffusée par WebSocket
+          description: Simulation appliquée avec succès
         '422':
           description: Statut invalide
   /microservices/simulate-all:

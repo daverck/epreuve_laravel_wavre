@@ -12,16 +12,13 @@ Artisan::command('inspire', function (): void {
 
 /*
 |--------------------------------------------------------------------------
-| Commande CLI de Sonde Active Docker -> Diffusion WebSocket Temps Réel
+| Commande CLI de Sonde Active des Conteneurs Docker
 |--------------------------------------------------------------------------
 | Cette commande `php artisan microservices:probe` interroge les 5 conteneurs
-| Docker (ms-core, ms-mailing, ms-carto, ms-voirie, ms-salle) sur le réseau
-| interne Docker. Si un conteneur est éteint (`docker stop wavre-ms-voirie`)
-| ou rallumé (`docker start wavre-ms-voirie`), elle met à jour la base MySQL
-| et pousse immédiatement l'événement `MicroserviceStatusUpdated` par WebSocket
-| (`ws://localhost:6001`) vers tous les écrans Angular connectés.
+| Docker (ms-core, ms-mailing, ms-carto, ms-voirie, ms-salle) sur leur route
+| HTTP `/health` et met à jour leur état dans la base de données MySQL.
 */
 Artisan::command('microservices:probe', function (HealthMonitorService $monitorService): void {
     $monitorService->probeDockerContainers();
     $this->info('Sonde Docker exécutée avec succès.');
-})->purpose('Sonde l\'état réel des 5 conteneurs Docker et diffuse tout changement via WebSocket');
+})->purpose('Sonde l\'état réel des 5 conteneurs Docker et met à jour la base MySQL');
