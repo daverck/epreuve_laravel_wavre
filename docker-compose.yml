@@ -1,0 +1,200 @@
+services:
+  # ==========================================================================
+  # 1. BASE DE DONNÉES RELATIONNELLE (MySQL 8.0)
+  # ==========================================================================
+  mysql:
+    image: mysql:8.0
+    container_name: wavre-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: wavre_monitoring
+      MYSQL_ROOT_PASSWORD: secret
+      MYSQL_USER: wavre
+      MYSQL_PASSWORD: secret
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - wavre-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-psecret"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ==========================================================================
+  # 2. BACKEND API REST (PHP 8.3 / Laravel 11 + Swagger UI)
+  # ==========================================================================
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend/Dockerfile
+    container_name: wavre-backend-api
+    restart: unless-stopped
+    working_dir: /var/www/html
+    volumes:
+      - ./backend:/var/www/html
+      - ./docs:/var/www/docs
+    ports:
+      - "8000:8000"
+    environment:
+      APP_NAME: "Wavre Microservices Monitor"
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_URL: http://localhost:8000
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_DATABASE: wavre_monitoring
+      DB_USERNAME: wavre
+      DB_PASSWORD: secret
+      DOCKER_PROBE_ENABLED: "true"
+      WS_HUB_URL: "http://ws-hub:6001/broadcast"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      ws-hub:
+        condition: service_started
+      ms-core:
+        condition: service_started
+      ms-mailing:
+        condition: service_started
+      ms-carto:
+        condition: service_started
+      ms-voirie:
+        condition: service_started
+      ms-salle:
+        condition: service_started
+    networks:
+      - wavre-net
+
+  # ==========================================================================
+  # 2b. SERVEUR WEBSOCKET TEMPS RÉEL (RFC 6455 - Port 6001)
+  # ==========================================================================
+  ws-hub:
+    build:
+      context: ./docker/websocket-hub
+      dockerfile: Dockerfile
+    container_name: wavre-ws-hub
+    restart: unless-stopped
+    environment:
+      PORT: 6001
+    ports:
+      - "6001:6001"
+    networks:
+      - wavre-net
+
+  # ==========================================================================
+  # 3. FRONTEND WALLBOARD (Angular + CSS Moderne Temps Réel)
+  # ==========================================================================
+  frontend:
+    image: node:20-alpine
+    container_name: wavre-frontend-wallboard
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+    ports:
+      - "4200:4200"
+    command: sh -c "npm install && npm run start -- --host 0.0.0.0 --port 4200"
+    depends_on:
+      - backend
+    networks:
+      - wavre-net
+
+  # ==========================================================================
+  # 4. LES 5 CONTENEURS MICROSERVICES INTERNES DE LA VILLE DE WAVRE
+  # ==========================================================================
+
+  # 4.1 Microservice CORE : Sert l'interface client (CRITIQUE)
+  ms-core:
+    build:
+      context: ./docker/microservice-node
+      dockerfile: Dockerfile
+    container_name: wavre-ms-core
+    restart: unless-stopped
+    environment:
+      SERVICE_SLUG: core
+      SERVICE_NAME: "Core (Interface Client)"
+      SERVICE_ROLE: "Sert l'interface client principale de l'application interne"
+      PORT: 8081
+    ports:
+      - "8081:8081"
+    networks:
+      - wavre-net
+
+  # 4.2 Microservice MAILING : Envoie les mails pour les différents processus
+  ms-mailing:
+    build:
+      context: ./docker/microservice-node
+      dockerfile: Dockerfile
+    container_name: wavre-ms-mailing
+    restart: unless-stopped
+    environment:
+      SERVICE_SLUG: mailing
+      SERVICE_NAME: "Mailing (Notifications)"
+      SERVICE_ROLE: "Envoie les mails transactionnels pour les différents processus métiers"
+      PORT: 8082
+    ports:
+      - "8082:8082"
+    networks:
+      - wavre-net
+
+  # 4.3 Microservice CARTO : Gère le CRUD des données cartographiques
+  ms-carto:
+    build:
+      context: ./docker/microservice-node
+      dockerfile: Dockerfile
+    container_name: wavre-ms-carto
+    restart: unless-stopped
+    environment:
+      SERVICE_SLUG: carto
+      SERVICE_NAME: "Carto (SIG & Géodonnées)"
+      SERVICE_ROLE: "Gère le CRUD des données cartographiques communales"
+      PORT: 8083
+    ports:
+      - "8083:8083"
+    networks:
+      - wavre-net
+
+  # 4.4 Microservice VOIRIE : Gère les arrêtés de police et autorisations de stationnement
+  ms-voirie:
+    build:
+      context: ./docker/microservice-node
+      dockerfile: Dockerfile
+    container_name: wavre-ms-voirie
+    restart: unless-stopped
+    environment:
+      SERVICE_SLUG: voirie
+      SERVICE_NAME: "Voirie (Arrêtés & Stationnement)"
+      SERVICE_ROLE: "Gère les arrêtés de police et les autorisations de stationnement"
+      PORT: 8084
+    ports:
+      - "8084:8084"
+    networks:
+      - wavre-net
+
+  # 4.5 Microservice SALLE : Gère les locations de salles
+  ms-salle:
+    build:
+      context: ./docker/microservice-node
+      dockerfile: Dockerfile
+    container_name: wavre-ms-salle
+    restart: unless-stopped
+    environment:
+      SERVICE_SLUG: salle
+      SERVICE_NAME: "Salle (Réservations & Locations)"
+      SERVICE_ROLE: "Gère les locations de salles communales et d'événements"
+      PORT: 8085
+    ports:
+      - "8085:8085"
+    networks:
+      - wavre-net
+
+networks:
+  wavre-net:
+    driver: bridge
+
+volumes:
+  mysql_data:
