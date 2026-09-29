@@ -1,7 +1,7 @@
 # 🏛️ Ville de Wavre — Wallboard de Supervision des Microservices Docker
 
 > **Épreuve Technique — Poste de Développeur Fullstack (Ville de Wavre)**  
-> **Stack** : PHP 8.3 (Laravel) • Angular / TypeScript / JS • CSS3 Animations • MySQL 8.0 • WebSockets & SSE • Docker Compose • OpenAPI 3.0 • PHPUnit • Laravel Pint & ESLint
+> **Stack** : PHP 8.4 (Laravel) • Angular / TypeScript / JS • CSS3 Animations • MySQL 8.0 • WebSockets (RFC 6455) • Docker Compose • OpenAPI 3.0 • PHPUnit • Laravel Pint & ESLint
 
 ---
 
@@ -9,7 +9,7 @@
 
 1. [Réflexion Architecturale & Choix Techniques](#-1-réflexion-architecturale--choix-techniques)
    - [1.1 Analyse du besoin métier de la Ville de Wavre](#11-analyse-du-besoin-métier-de-la-ville-de-wavre)
-   - [1.2 Temps Réel : Pourquoi WebSockets vs SSE vs Polling ?](#12-temps-réel--pourquoi-websockets-vs-sse-vs-polling-)
+   - [1.2 Temps Réel : Pourquoi avoir choisi les WebSockets ?](#12-temps-réel--pourquoi-avoir-choisi-les-websockets-)
    - [1.3 Modélisation de la Base de Données Relationnelle](#13-modélisation-de-la-base-de-données-relationnelle)
    - [1.4 Ergonomie "Wallboard / NOC TV" & Alerte Visuelle Rapide](#14-ergonomie-wallboard--noc-tv--alerte-visuelle-rapide)
 2. [Consignes pour Lancer le Projet](#-2-consignes-pour-lancer-le-projet)
@@ -41,19 +41,17 @@ L'administration communale de la **Ville de Wavre** exploite une application int
 
 ---
 
-### 1.2 Temps Réel : Pourquoi WebSockets vs SSE vs Polling ?
+### 1.2 Temps Réel : Pourquoi avoir choisi les WebSockets ?
 
-Pour afficher une alerte visuelle **rapidement** lorsqu'un microservice se déconnecte, trois paradigmes de communication existent entre le navigateur (l'écran mural Angular) et le serveur (Laravel) :
+Pour afficher une alerte visuelle **rapidement** lorsqu'un microservice se déconnecte, nous avons retenu **exclusivement les WebSockets (`ws://localhost:6001` RFC 6455)** après avoir écarté les deux autres approches classiques :
 
-1. **Short Polling HTTP (`GET /api/microservices` toutes les $N$ secondes)** :
-   - *Principe* : Le client interroge périodiquement le serveur.
-   - *Limite* : Génère une latence moyenne de $N/2$ secondes et consomme de la bande passante inutilement lorsque tous les services sont `UP` (99 % du temps).
-2. **Server-Sent Events (`SSE` — `EventSource` sur `GET /api/microservices/stream`)** :
-   - *Principe* : Connexion HTTP persistante **unidirectionnelle** (`Serveur -> Client`, `Content-Type: text/event-stream`).
-   - *Analyse* : C'est la solution HTTP standard idéale pour un écran d'affichage **purement passif**, avec reconnexion automatique native dans le navigateur.
-3. **WebSockets (`ws://` RFC 6455 — Canal TCP Full-Duplex Bidirectionnel)** :
-   - *Principe* : Connexion persistante **bidirectionnelle** à très faible latence ($< 5\text{ ms}$) entre le serveur (`wavre-ws-hub` piloté par l'événement Laravel `MicroserviceStatusUpdated`) et tous les écrans connectés.
-   - *Pourquoi avoir retenu **exclusivement les WebSockets** dans notre implémentation ?* : Notre application combine **supervision sur écran mural** ET **actions interactives de simulation** pouvant être déclenchées depuis un autre poste (ou un autre onglet). Dès qu'un opérateur clique sur *"Simuler Déconnexion"*, Laravel met à jour la base de données, pilote le conteneur Docker cible et diffuse l'événement `MicroserviceStatusUpdated` via le serveur WebSocket (`ws://localhost:6001`) : **l'alerte visuelle s'affiche en moins de 5 millisecondes sur tous les écrans connectés**, avec une architecture unique, propre et sans redondance de protocoles.
+1. **Pourquoi écarter le Short Polling HTTP ?** :
+   - Le client qui interroge périodiquement le serveur génère une latence moyenne de $N/2$ secondes et consomme de la bande passante inutilement lorsque tous les services sont `UP` (99 % du temps).
+2. **Pourquoi écarter les Server-Sent Events (SSE) ?** :
+   - SSE est limité à une communication **unidirectionnelle** (`Serveur -> Client`). Or, notre interface n'est pas uniquement un écran passif : elle intègre des **commandes interactives de simulation** pouvant être utilisées simultanément sur plusieurs postes.
+3. **Notre choix : WebSockets (`ws://` RFC 6455 — Canal TCP Full-Duplex Bidirectionnel)** :
+   - Connexion persistante **bidirectionnelle** à très faible latence ($< 5\text{ ms}$) entre le serveur (`wavre-ws-hub` piloté par l'événement Laravel `MicroserviceStatusUpdated`) et tous les écrans connectés.
+   - Dès qu'un opérateur clique sur *"Simuler Déconnexion"*, Laravel met à jour la base de données, pilote le conteneur Docker cible et diffuse l'événement `MicroserviceStatusUpdated` via le serveur WebSocket (`ws://localhost:6001`) : **l'alerte visuelle s'affiche en moins de 5 millisecondes sur tous les écrans connectés**, avec une architecture unique, propre et sans redondance.
 
 ---
 
@@ -156,7 +154,7 @@ Le projet fournit **les deux méthodes** demandées dans l'énoncé :
 
 ```text
 epreuve_lavarel_wavre/
-├── backend/                                # Code Backend PHP 8.3 / Laravel (commenté en français)
+├── backend/                                # Code Backend PHP 8.4 / Laravel (commenté en français)
 │   ├── app/
 │   │   ├── Events/MicroserviceStatusUpdated.php
 │   │   ├── Http/Controllers/Api/MicroserviceController.php
@@ -167,24 +165,24 @@ epreuve_lavarel_wavre/
 │   │   ├── migrations/                     # 3 tables relationnelles (microservices, service_logs, health_checks)
 │   │   ├── seeders/                        # MicroserviceSeeder.php & DatabaseSeeder.php
 │   │   └── dump.sql                        # Dump SQL complet (CREATE TABLE + INSERT INTO)
-│   ├── routes/api.php                      # Routes REST + SSE + Swagger UI
+│   ├── routes/api.php                      # Routes REST + Swagger UI
 │   ├── tests/Feature/MicroserviceMonitoringTest.php
 │   └── pint.json                           # Configuration du linter Laravel Pint (PSR-12)
 ├── frontend/                               # Code Frontend Angular / TypeScript / CSS Wallboard
 │   ├── src/app/
 │   │   ├── models/microservice.model.ts
-│   │   ├── services/monitoring.service.ts  # Client hybride WebSockets + SSE + Polling
+│   │   ├── services/monitoring.service.ts  # Client Temps Réel 100 % WebSockets (ws://localhost:6001)
 │   │   └── app.component.*                 # Interface Wallboard, Alertes Visuelles & Simulation
 │   └── .eslintrc.json                      # Configuration du linter ESLint
 ├── docker/
-│   ├── backend/                            # Dockerfile PHP 8.3 + script d'initialisation automatique
+│   ├── backend/                            # Dockerfile PHP 8.4 + script d'initialisation automatique
 │   ├── microservice-node/                  # Image des 5 vrais conteneurs Docker (core, mailing, carto, voirie, salle)
 │   └── websocket-hub/                      # Serveur WebSocket Temps Réel RFC 6455 (port 6001)
 ├── docs/
 │   ├── SCHEMA_RELATIONNEL.md               # Schéma relationnel BDD (Mermaid ERD + dictionnaire)
 │   ├── openapi.yaml                        # Contrat OpenAPI 3.0.3 complet
-│   └── GUIDE_EXAMEN_ORAL.md                # Guide de préparation à l'examen oral (WebSockets vs SSE vs Polling)
+│   └── GUIDE_EXAMEN_ORAL.md                # Guide de préparation à l'examen oral (Justification WebSockets)
 ├── AGENTS.md & .agents/                    # Configuration des agents Antigravity (Backend & Frontend)
-├── docker-compose.yml                      # Orchestration complète des 8 conteneurs Docker
+├── docker-compose.yml                      # Orchestration complète des 9 conteneurs Docker
 └── README.md                               # Ce document (Réflexion, Lancement & Fonctionnalités)
 ```

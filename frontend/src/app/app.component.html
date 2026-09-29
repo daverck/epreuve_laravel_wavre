@@ -188,9 +188,9 @@
               <span class="metric-label">CHARGE CPU / RAM</span>
               <span class="metric-val mono">{{ service.cpu_usage_percent }}% • {{ service.memory_mb }} Mo</span>
             </div>
-            <div class="metric-cell">
-              <span class="metric-label">SONDE DOCKER</span>
-              <span class="metric-val mono">{{ service.endpoint_url }}</span>
+            <div class="metric-cell metric-cell-full">
+              <span class="metric-label">SONDE DOCKER (HEALTHCHECK INTERNE)</span>
+              <span class="metric-val metric-val-url mono">{{ service.endpoint_url }}</span>
             </div>
           </div>
 
