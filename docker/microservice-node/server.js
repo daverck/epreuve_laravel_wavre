@@ -104,3 +104,6 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`[Ville de Wavre] Microservice "${SERVICE_SLUG}" (${SERVICE_NAME}) démarré sur le port ${PORT}`);
 });
+
+process.on('SIGTERM', () => process.exit(0));
+process.on('SIGINT', () => process.exit(0));

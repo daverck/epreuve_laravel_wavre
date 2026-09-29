@@ -197,11 +197,17 @@ class HealthMonitorService
                         $detectedStatus = 'DOWN';
                     }
                 } catch (\Throwable) {
-                    // Si le conteneur Docker n'est pas joignable (ex: exécution locale hors Docker),
-                    // on conserve l'état simulé courant pour garantir la continuité de la démonstration.
-                    $httpStatusCode = $service->status === 'DOWN' ? 503 : 200;
-                    $latencyMs = $service->status === 'DOWN' ? 0 : ($service->response_time_ms ?: 15);
-                    $detectedStatus = $service->status;
+                    // En environnement Docker (DOCKER_PROBE_ENABLED=true), une exception de connexion
+                    // signifie que le conteneur Docker (ex: wavre-ms-voirie) a été arrêté ou est injoignable.
+                    if (filter_var(env('DOCKER_PROBE_ENABLED', false), FILTER_VALIDATE_BOOLEAN)) {
+                        $httpStatusCode = 503;
+                        $latencyMs = 0;
+                        $detectedStatus = 'DOWN';
+                    } else {
+                        $httpStatusCode = $service->status === 'DOWN' ? 503 : 200;
+                        $latencyMs = $service->status === 'DOWN' ? 0 : ($service->response_time_ms ?: 15);
+                        $detectedStatus = $service->status;
+                    }
                 }
             } else {
                 $httpStatusCode = $service->status === 'DOWN' ? 503 : 200;
@@ -314,11 +320,15 @@ class HealthMonitorService
 
         try {
             Http::timeout(0.5)->post($wsHubUrl, [
-                'event' => 'microservice.status.updated',
+                'event' => 'MicroserviceStatusUpdated',
                 'channel' => 'microservices-wallboard',
-                'microservice' => $service->toArray(),
-                'log' => $log->toArray(),
-                'dashboard' => $dashboard,
+                'data' => [
+                    'service' => $service->toArray(),
+                    'log' => $log->toArray(),
+                    'microservices' => $dashboard['microservices'] ?? [],
+                    'summary' => $dashboard['summary'] ?? [],
+                    'recent_incidents' => $dashboard['recent_incidents'] ?? [],
+                ],
                 'timestamp' => now()->toIso8601String(),
             ]);
         } catch (\Throwable) {

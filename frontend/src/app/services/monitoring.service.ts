@@ -283,24 +283,34 @@ export class RealtimeMonitoringService implements OnDestroy {
    */
   private handleWebSocketFrame(rawMessage: string, startedAtMs: number): void {
     try {
-      const parsed = JSON.parse(rawMessage) as WebSocketBroadcastPayload & {
-        data?: string | WebSocketBroadcastPayload;
-      };
-
-      const payload: WebSocketBroadcastPayload =
-        typeof parsed.data === 'string'
-          ? (JSON.parse(parsed.data) as WebSocketBroadcastPayload)
-          : (parsed.data ?? parsed);
+      const parsed = JSON.parse(rawMessage) as Record<string, unknown>;
+      const rawData = parsed['data'];
+      const payload: Record<string, unknown> =
+        typeof rawData === 'string'
+          ? (JSON.parse(rawData) as Record<string, unknown>)
+          : rawData && typeof rawData === 'object'
+            ? (rawData as Record<string, unknown>)
+            : parsed;
 
       const frameLatencyMs = Math.min(
         4,
         Math.max(1, Math.round(performance.now() - startedAtMs))
       );
 
-      if (payload.services && Array.isArray(payload.services)) {
+      if (
+        Array.isArray(payload['microservices']) ||
+        Array.isArray(payload['services'])
+      ) {
         this.applyDashboardPayload(payload, frameLatencyMs);
-      } else if (payload.service && payload.service.slug) {
-        this.applySingleServiceWebSocketEvent(payload.service, frameLatencyMs);
+      } else if (
+        payload['service'] &&
+        typeof payload['service'] === 'object' &&
+        (payload['service'] as { slug?: MicroserviceSlug }).slug
+      ) {
+        this.applySingleServiceWebSocketEvent(
+          payload['service'] as Partial<MicroserviceItem> & { slug?: MicroserviceSlug },
+          frameLatencyMs
+        );
       }
     } catch {
       // Ignorer les trames ping/pong non-métier
@@ -603,18 +613,37 @@ export class RealtimeMonitoringService implements OnDestroy {
     if (Array.isArray(rawIncidents) && rawIncidents.length > 0) {
       nextIncidents = (rawIncidents as Record<string, unknown>[]).map((inc, index) => ({
         id: String(inc['id'] ?? `ws-inc-${index}`),
-        service_slug: (inc['service_slug'] as MicroserviceSlug) ?? 'core',
-        service_name: String(inc['service_name'] ?? 'Microservice Wavre'),
-        container_name: String(inc['container_name'] ?? 'wavre-ms-container'),
+        service_slug:
+          ((inc['service_slug'] ?? inc['microservice_slug']) as MicroserviceSlug) ??
+          'core',
+        service_name: String(
+          inc['service_name'] ?? inc['microservice_name'] ?? 'Microservice Wavre'
+        ),
+        container_name: String(
+          inc['container_name'] ??
+            `wavre-ms-${String(inc['microservice_slug'] ?? inc['service_slug'] ?? 'core')}`
+        ),
         previous_status: (inc['previous_status'] as ServiceStatus) ?? 'UP',
         new_status: (inc['new_status'] as ServiceStatus) ?? 'DOWN',
         source:
-          (inc['source'] as 'SIMULATION_UI' | 'DOCKER_PROBE' | 'SYSTEM_RECOVERY') ??
-          'DOCKER_PROBE',
-        reason: String(inc['reason'] ?? 'Événement WebSocket MicroserviceStatusUpdated reçu'),
-        occurred_at: String(inc['occurred_at'] ?? new Date().toISOString()),
+          ((inc['source'] ?? inc['trigger_source']) as
+            | 'SIMULATION_UI'
+            | 'DOCKER_PROBE'
+            | 'SYSTEM_RECOVERY') ?? 'DOCKER_PROBE',
+        reason: String(
+          inc['reason'] ??
+            inc['message'] ??
+            'Événement WebSocket MicroserviceStatusUpdated reçu'
+        ),
+        occurred_at: String(
+          inc['occurred_at'] ?? inc['created_at'] ?? new Date().toISOString()
+        ),
         duration_seconds:
-          typeof inc['duration_seconds'] === 'number' ? inc['duration_seconds'] : null,
+          typeof inc['duration_seconds'] === 'number'
+            ? inc['duration_seconds']
+            : typeof inc['downtime_duration_seconds'] === 'number'
+              ? inc['downtime_duration_seconds']
+              : null,
       }));
     }
 
