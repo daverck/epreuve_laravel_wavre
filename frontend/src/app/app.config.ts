@@ -3,7 +3,7 @@
  * VILLE DE WAVRE — CONFIGURATION GLOBALE ANGULAR 18 (STANDALONE ARCHITECTURE)
  * ============================================================================
  * Fournit le client HTTP réactif (`provideHttpClient`) requis par le service
- * de supervision hybride (REST API, Server-Sent Events et WebSockets).
+ * de supervision HTTP REST (Short Polling toutes les 2 secondes).
  */
 import { ApplicationConfig, provideZoneChangeDetection } from '@angular/core';
 import { provideHttpClient, withFetch } from '@angular/common/http';

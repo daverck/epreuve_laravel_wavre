@@ -3,8 +3,8 @@
  * VILLE DE WAVRE — MODÈLES DE DONNÉES DU WALLBOARD DE SUPERVISION (TYPESCRIPT)
  * ============================================================================
  * Ce fichier définit les contrats de données (Interfaces & Types stricts)
- * partagés entre le Backend Laravel 12 (API REST & Diffusion WebSocket) et
- * le Frontend Angular 18 (Architecture réactive à base de Signals).
+ * partagés entre le Backend Laravel 12 (API REST HTTP) et le Frontend
+ * Angular 18 (Architecture réactive à base de Signals et Short Polling 2s).
  *
  * Architecture supervisée : 5 Microservices Dockerisés :
  *  1. `core`    (Critique) : Interface citoyenne principale & orchestration
@@ -93,22 +93,19 @@ export interface IncidentLogItem {
 }
 
 /**
- * État de connexion WebSocket Temps Réel (`ws://localhost:6001`) affiché dans
- * l'en-tête du Wallboard NOC de la Ville de Wavre.
+ * État de la supervision HTTP REST (Short Polling toutes les 2 secondes).
  */
-export interface WebSocketConnectionState {
-  /** Indique si le canal WebSocket Full-Duplex est actif et connecté */
-  wsConnected: boolean;
-  /** Point de terminaison WebSocket (ex: `ws://localhost:6001`) */
-  wsEndpoint: string;
-  /** Latence mesurée du dernier événement WebSocket reçu (en ms, typiquement < 5 ms) */
-  lastEventLatencyMs: number;
-  /** Nombre total d'événements `MicroserviceStatusUpdated` reçus via WebSocket */
-  wsEventsCount: number;
-  /** Horodatage ISO de la dernière trame WebSocket reçue */
-  lastEventAt: string;
-  /** Libellé lisible de l'état du socket (ex: `Connecté (Full-Duplex < 5 ms)`) */
-  statusText: string;
+export interface PollingState {
+  /** Indique si la boucle de scrutation HTTP REST est active */
+  isPolling: boolean;
+  /** Intervalle de scrutation en millisecondes (`2000`) */
+  intervalMs: number;
+  /** Horodatage ISO de la dernière vérification réussie */
+  lastCheckedAt: string;
+  /** Nombre total de cycles de sondes effectués */
+  pollCount: number;
+  /** Latence mesurée du dernier appel HTTP REST (en ms) */
+  apiLatencyMs: number;
 }
 
 /**
@@ -119,18 +116,6 @@ export interface DashboardState {
   services: MicroserviceItem[];
   /** Le fil chronologique des incidents en direct */
   recentIncidents: IncidentLogItem[];
-  /** L'état de la connexion WebSocket Temps Réel */
-  wsState: WebSocketConnectionState;
-}
-
-/**
- * Charge utile (Payload) diffusée par l'événement Laravel `MicroserviceStatusUpdated`
- * sur le canal WebSocket (`ws://localhost:6001`).
- */
-export interface WebSocketBroadcastPayload {
-  event?: string;
-  service?: Partial<MicroserviceItem> & { slug?: MicroserviceSlug };
-  services?: MicroserviceItem[];
-  recent_incidents?: IncidentLogItem[];
-  timestamp?: string;
+  /** L'état de la supervision HTTP REST périodique (toutes les 2s) */
+  pollingState: PollingState;
 }

@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Events\MicroserviceStatusUpdated;
 use App\Models\HealthCheck;
 use App\Models\Microservice;
 use App\Models\ServiceLog;
@@ -10,8 +9,8 @@ use Illuminate\Support\Facades\Http;
 
 /**
  * Service métier centralisant la supervision des 5 microservices de la Ville de Wavre,
- * la simulation de pannes (Chaos Engineering), l'interrogation des conteneurs Docker
- * et la diffusion temps réel via WebSockets (`MicroserviceStatusUpdated`).
+ * la simulation de pannes (Chaos Engineering) et l'interrogation temps réel des
+ * conteneurs Docker via une architecture 100 % REST HTTP Stateless (Short Polling).
  */
 class HealthMonitorService
 {
@@ -78,8 +77,8 @@ class HealthMonitorService
 
     /**
      * Simule la déconnexion (`DOWN`), le ralentissement (`DEGRADED`) ou la reconnexion (`UP`)
-     * d'un microservice, calcule la durée d'indisponibilité en cas de rétablissement,
-     * pilote le conteneur Docker correspondant et diffuse l'alerte en temps réel via WebSocket.
+     * d'un microservice, calcule la durée d'indisponibilité en cas de rétablissement
+     * et pilote le conteneur Docker correspondant.
      *
      * @return array{microservice: Microservice, log: ServiceLog, dashboard: array<string, mixed>}
      */
@@ -117,9 +116,16 @@ class HealthMonitorService
             $uptime = max(95.00, round($uptime - 0.05, 2));
         }
 
+        // Si l'action provient de l'interface (SIMULATION_UI), on verrouille is_simulated_down
+        // tant que le statut n'est pas UP. Si elle provient de la sonde Docker (DOCKER_PROBE),
+        // is_simulated_down passe à false pour refléter l'état physique du conteneur.
+        $isSimulatedDown = $source === 'SIMULATION_UI'
+            ? ($newStatus !== 'UP')
+            : false;
+
         $service->update([
             'status' => $newStatus,
-            'is_simulated_down' => $newStatus !== 'UP',
+            'is_simulated_down' => $isSimulatedDown,
             'response_time_ms' => $simulatedLatency,
             'uptime_percentage' => $uptime,
             'last_checked_at' => $now,
@@ -156,10 +162,6 @@ class HealthMonitorService
         $service->refresh();
         $dashboard = $this->getDashboardPayload(false);
 
-        // Diffusion de l'événement Broadcast Laravel et push vers le Hub WebSocket (port 6001)
-        MicroserviceStatusUpdated::dispatch($service, $log, $dashboard);
-        $this->broadcastToWebsocketHub($service, $log, $dashboard);
-
         return [
             'microservice' => $service,
             'log' => $log,
@@ -168,60 +170,77 @@ class HealthMonitorService
     }
 
     /**
-     * Interroge activement les 5 conteneurs Docker sur leur endpoint HTTP `/health`
+     * Interroge activement les 5 conteneurs Docker sur leur port TCP / endpoint HTTP `/health`
      * et enregistre une mesure `HealthCheck` pour chacun d'entre eux.
+     *
+     * Règles de priorité entre Simulation UI et Sonde Docker :
+     * - Si le conteneur Docker est arrêté/injoignable (`@fsockopen` échoue) et `DOCKER_PROBE_ENABLED=true`,
+     *   `$detectedStatus = 'DOWN'`.
+     * - Si le conteneur répond `200 OK` mais que `$service->is_simulated_down === true`,
+     *   on conserve `$detectedStatus = $service->status` pour ne pas écraser la simulation manuelle de l'UI.
+     * - Si `$service->is_simulated_down === false` (panne issue d'un `docker stop` réel) et que le conteneur
+     *   répond à nouveau, `$detectedStatus = 'UP'` rétablit automatiquement le microservice.
      */
     public function probeDockerContainers(): void
     {
         $microservices = Microservice::query()->orderBy('id')->get();
         $now = now();
+        $dockerProbeEnabled = filter_var(env('DOCKER_PROBE_ENABLED', false), FILTER_VALIDATE_BOOLEAN);
 
         foreach ($microservices as $service) {
             $startTime = microtime(true);
-            $httpStatusCode = 200;
-            $latencyMs = $service->response_time_ms ?: 15;
+            $httpStatusCode = $service->status === 'DOWN' ? 503 : 200;
+            $latencyMs = $service->status === 'DOWN' ? 0 : ($service->response_time_ms ?: 15);
             $detectedStatus = $service->status;
 
-            if (! app()->runningUnitTests()) {
-                try {
-                    $host = parse_url($service->health_url, PHP_URL_HOST) ?: ('ms-' . $service->slug);
-                    $port = (int) (parse_url($service->health_url, PHP_URL_PORT) ?: $service->port);
+            if (! app()->runningUnitTests() && $dockerProbeEnabled) {
+                $host = sprintf('ms-%s', $service->slug);
+                $errno = 0;
+                $errstr = '';
+                $socket = @fsockopen($host, (int) $service->port, $errno, $errstr, 0.4);
 
-                    // Vérification TCP ultra-rapide (300ms max) : détecte immédiatement un "docker stop"
-                    $socket = @fsockopen((string) $host, $port, $errno, $errstr, 0.3);
-                    if ($socket === false) {
-                        throw new \RuntimeException("Container {$host}:{$port} unreachable");
-                    }
+                if ($socket === false) {
+                    // Conteneur Docker réellement arrêté (ex: `docker stop wavre-ms-voirie`)
+                    $detectedStatus = 'DOWN';
+                    $httpStatusCode = 503;
+                    $latencyMs = 0;
+                } else {
                     fclose($socket);
-
-                    $response = Http::connectTimeout(1)->timeout(1)->get($service->health_url);
                     $latencyMs = max(1, (int) round((microtime(true) - $startTime) * 1000));
-                    $httpStatusCode = $response->status();
 
-                    if ($response->successful()) {
-                        $bodyStatus = strtoupper((string) $response->json('status', 'UP'));
-                        $detectedStatus = in_array($bodyStatus, ['UP', 'DOWN', 'DEGRADED'], true)
-                            ? $bodyStatus
-                            : 'UP';
-                    } else {
+                    try {
+                        $response = Http::timeout(0.4)->get($service->health_url);
+                        $latencyMs = max(1, (int) round((microtime(true) - $startTime) * 1000));
+                        $httpStatusCode = $response->status();
+
+                        if ($response->successful()) {
+                            $bodyStatus = strtoupper((string) $response->json('status', 'UP'));
+                            $containerStatus = in_array($bodyStatus, ['UP', 'DOWN', 'DEGRADED'], true)
+                                ? $bodyStatus
+                                : 'UP';
+
+                            if ($service->is_simulated_down) {
+                                // Conserve la simulation manuelle déclenchée depuis le Wallboard UI
+                                $detectedStatus = $service->status;
+                                $httpStatusCode = $service->status === 'DOWN' ? 503 : 200;
+                                $latencyMs = $service->status === 'DOWN'
+                                    ? 0
+                                    : ($service->status === 'DEGRADED' ? 460 : $latencyMs);
+                            } else {
+                                // Rétablissement automatique (ex: après `docker start`) ou état du conteneur
+                                $detectedStatus = $containerStatus;
+                            }
+                        } else {
+                            $detectedStatus = 'DOWN';
+                            $httpStatusCode = 503;
+                            $latencyMs = 0;
+                        }
+                    } catch (\Throwable) {
                         $detectedStatus = 'DOWN';
-                    }
-                } catch (\Throwable) {
-                    // En environnement Docker (DOCKER_PROBE_ENABLED=true), une exception de connexion
-                    // signifie que le conteneur Docker (ex: wavre-ms-voirie) a été arrêté ou est injoignable.
-                    if (filter_var(env('DOCKER_PROBE_ENABLED', false), FILTER_VALIDATE_BOOLEAN)) {
                         $httpStatusCode = 503;
                         $latencyMs = 0;
-                        $detectedStatus = 'DOWN';
-                    } else {
-                        $httpStatusCode = $service->status === 'DOWN' ? 503 : 200;
-                        $latencyMs = $service->status === 'DOWN' ? 0 : ($service->response_time_ms ?: 15);
-                        $detectedStatus = $service->status;
                     }
                 }
-            } else {
-                $httpStatusCode = $service->status === 'DOWN' ? 503 : 200;
-                $latencyMs = $service->status === 'DOWN' ? 0 : ($service->response_time_ms ?: 15);
             }
 
             HealthCheck::create([
@@ -303,52 +322,11 @@ class HealthMonitorService
             ?: sprintf('http://ms-%s:%d/simulate', $service->slug, $service->port);
 
         try {
-            $host = parse_url($simulateUrl, PHP_URL_HOST) ?: ('ms-' . $service->slug);
-            $port = (int) (parse_url($simulateUrl, PHP_URL_PORT) ?: $service->port);
-            $socket = @fsockopen((string) $host, $port, $errno, $errstr, 0.2);
-            if ($socket !== false) {
-                fclose($socket);
-                Http::connectTimeout(1)->timeout(1)->post($simulateUrl, [
-                    'status' => $newStatus,
-                ]);
-            }
-        } catch (\Throwable) {
-            // Ignoré silencieusement si le conteneur cible est arrêté ou hors réseau Docker
-        }
-    }
-
-    /**
-     * Publie instantanément l'événement vers le Hub WebSocket (`ws-hub:6001/broadcast`)
-     * pour pousser la mise à jour aux écrans Wallboard connectés en RFC 6455.
-     *
-     * @param  array<string, mixed>  $dashboard
-     */
-    private function broadcastToWebsocketHub(
-        Microservice $service,
-        ServiceLog $log,
-        array $dashboard
-    ): void {
-        if (app()->runningUnitTests()) {
-            return;
-        }
-
-        $wsHubUrl = (string) env('WS_HUB_URL', 'http://ws-hub:6001/broadcast');
-
-        try {
-            Http::connectTimeout(1)->timeout(1)->post($wsHubUrl, [
-                'event' => 'MicroserviceStatusUpdated',
-                'channel' => 'microservices-wallboard',
-                'data' => [
-                    'service' => $service->toArray(),
-                    'log' => $log->toArray(),
-                    'microservices' => $dashboard['microservices'] ?? [],
-                    'summary' => $dashboard['summary'] ?? [],
-                    'recent_incidents' => $dashboard['recent_incidents'] ?? [],
-                ],
-                'timestamp' => now()->toIso8601String(),
+            Http::timeout(0.5)->post($simulateUrl, [
+                'status' => $newStatus,
             ]);
         } catch (\Throwable) {
-            // Ignoré silencieusement si le serveur WebSocket n'est pas joignable
+            // Ignoré silencieusement si le conteneur cible est arrêté ou hors réseau Docker
         }
     }
 }

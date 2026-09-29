@@ -5,10 +5,10 @@ use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------
-| Routes API REST & Temps Réel WebSocket — Supervision Microservices (Ville de Wavre)
+| Routes API REST HTTP Stateless — Supervision Microservices (Ville de Wavre)
 |--------------------------------------------------------------------------
 | Préfixées automatiquement par `/api` via `bootstrap/app.php`.
-| Alimente l'écran mural (Wallboard Angular) via API REST et diffusion WebSocket.
+| Alimente l'écran mural (Wallboard Angular) via Short Polling REST HTTP.
 */
 
 // Documentation interactive OpenAPI 3.0.3 / Swagger UI

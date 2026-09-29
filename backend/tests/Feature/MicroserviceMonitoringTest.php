@@ -2,18 +2,18 @@
 
 namespace Tests\Feature;
 
-use App\Events\MicroserviceStatusUpdated;
+use App\Models\Microservice;
+use App\Services\HealthMonitorService;
 use Database\Seeders\MicroserviceSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
 
 /**
  * Suite de tests fonctionnels (Feature Tests PHPUnit) validant l'intégralité
  * du backend de supervision des 5 microservices de la Ville de Wavre :
- * - API REST de supervision (`/api/microservices`)
+ * - API REST HTTP Stateless de supervision (`/api/microservices`)
  * - Simulation de pannes (`DOWN`, `DEGRADED`) et reconnexion (`UP`) avec calcul du downtime
- * - Diffusion temps réel via WebSockets (`MicroserviceStatusUpdated` sur `microservices-wallboard`)
+ * - Distinction entre simulation manuelle (`SIMULATION_UI`) et sonde Docker (`DOCKER_PROBE`)
  * - Contrat OpenAPI 3.0 & Swagger UI (`/api/openapi.yaml`, `/api/docs`)
  */
 class MicroserviceMonitoringTest extends TestCase
@@ -181,42 +181,36 @@ class MicroserviceMonitoringTest extends TestCase
     }
 
     /**
-     * Test 7 : Vérifie que l'événement WebSocket `MicroserviceStatusUpdated` (`ShouldBroadcastNow`)
-     * est déclenché sur le canal `microservices-wallboard` lors d'une simulation de déconnexion et reconnexion.
+     * Test 7 : Vérifie que `simulateStatus` distingue correctement l'origine `SIMULATION_UI`
+     * (`is_simulated_down = true`) de l'origine `DOCKER_PROBE` (`is_simulated_down = false`).
      */
-    public function test_it_dispatches_websocket_broadcast_event_on_disconnection_and_reconnection(): void
+    public function test_it_distinguishes_ui_simulation_from_docker_probe_transitions(): void
     {
-        Event::fake([MicroserviceStatusUpdated::class]);
+        $service = Microservice::query()->where('slug', 'salle')->firstOrFail();
+        $monitor = app(HealthMonitorService::class);
 
-        // Simulation d'une déconnexion sur le microservice `salle`
-        $this->postJson('/api/microservices/salle/simulate', [
-            'status' => 'DOWN',
-            'reason' => 'Coupure simulée du service Salle',
-        ])->assertOk();
+        // 1. Panne détectée par la sonde Docker (ex: `docker stop wavre-ms-salle`)
+        $probeResult = $monitor->simulateStatus(
+            $service,
+            'DOWN',
+            'Arrêt du conteneur Docker détecté par sonde',
+            'DOCKER_PROBE'
+        );
 
-        Event::assertDispatched(MicroserviceStatusUpdated::class, function (MicroserviceStatusUpdated $event): bool {
-            $channels = collect($event->broadcastOn())->map(fn ($channel) => $channel->name)->all();
-            $payload = $event->broadcastWith();
+        $this->assertSame('DOWN', $probeResult['microservice']->status);
+        $this->assertFalse($probeResult['microservice']->is_simulated_down);
+        $this->assertSame('DOCKER_PROBE', $probeResult['log']->trigger_source);
 
-            return $event->microservice->slug === 'salle'
-                && $event->microservice->status === 'DOWN'
-                && in_array('microservices-wallboard', $channels, true)
-                && $event->broadcastAs() === 'microservice.status.updated'
-                && ($payload['dashboard']['summary']['down_count'] ?? 0) === 1;
-        });
+        // 2. Rétablissement automatique détecté par la sonde Docker (`docker start wavre-ms-salle`)
+        $recoveryResult = $monitor->simulateStatus(
+            $service,
+            'UP',
+            'Redémarrage du conteneur Docker détecté par sonde',
+            'DOCKER_PROBE'
+        );
 
-        // Simulation d'une reconnexion sur le microservice `salle`
-        $this->postJson('/api/microservices/salle/simulate', [
-            'status' => 'UP',
-            'reason' => 'Reconnexion du service Salle',
-        ])->assertOk();
-
-        Event::assertDispatched(MicroserviceStatusUpdated::class, function (MicroserviceStatusUpdated $event): bool {
-            return $event->microservice->slug === 'salle'
-                && $event->microservice->status === 'UP'
-                && $event->serviceLog->previous_status === 'DOWN'
-                && $event->serviceLog->new_status === 'UP';
-        });
+        $this->assertSame('UP', $recoveryResult['microservice']->status);
+        $this->assertFalse($recoveryResult['microservice']->is_simulated_down);
     }
 
     /**

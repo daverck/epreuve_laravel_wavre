@@ -1,7 +1,7 @@
 # 🏛️ Ville de Wavre — Wallboard de Supervision des Microservices Docker
 
 > **Épreuve Technique — Poste de Développeur Fullstack (Ville de Wavre)**  
-> **Stack** : PHP 8.4 (Laravel) • Angular / TypeScript / JS • CSS3 Animations • MySQL 8.0 • WebSockets (RFC 6455) • Docker Compose • OpenAPI 3.0 • PHPUnit • Laravel Pint & ESLint
+> **Stack** : PHP 8.4 (Laravel) • Angular / TypeScript / JS • CSS3 Animations • MySQL 8.0 • Docker Compose • OpenAPI 3.0 • PHPUnit • Laravel Pint & ESLint
 
 ---
 
@@ -9,7 +9,7 @@
 
 1. [Réflexion Architecturale & Choix Techniques](#-1-réflexion-architecturale--choix-techniques)
    - [1.1 Analyse du besoin métier de la Ville de Wavre](#11-analyse-du-besoin-métier-de-la-ville-de-wavre)
-   - [1.2 Temps Réel : Pourquoi avoir choisi les WebSockets ?](#12-temps-réel--pourquoi-avoir-choisi-les-websockets-)
+   - [1.2 Stratégie Temps Réel : Pourquoi le Short Polling HTTP REST (2s) ?](#12-stratégie-temps-réel--pourquoi-le-short-polling-http-rest-2s-)
    - [1.3 Modélisation de la Base de Données Relationnelle](#13-modélisation-de-la-base-de-données-relationnelle)
    - [1.4 Ergonomie "Wallboard / NOC TV" & Alerte Visuelle Rapide](#14-ergonomie-wallboard--noc-tv--alerte-visuelle-rapide)
 2. [Consignes pour Lancer le Projet](#-2-consignes-pour-lancer-le-projet)
@@ -41,17 +41,18 @@ L'administration communale de la **Ville de Wavre** exploite une application int
 
 ---
 
-### 1.2 Temps Réel : Pourquoi avoir choisi les WebSockets ?
+### 1.2 Stratégie Temps Réel : Pourquoi le Short Polling HTTP REST (2s) ?
 
-Pour afficher une alerte visuelle **rapidement** lorsqu'un microservice se déconnecte, nous avons retenu **exclusivement les WebSockets (`ws://localhost:6001` RFC 6455)** après avoir écarté les deux autres approches classiques :
+Pour rafraîchir l'écran mural et détecter rapidement la déconnexion d'un microservice, nous avons comparé **Short Polling HTTP**, **Server-Sent Events (SSE)** et **WebSockets** selon les principes d'architecture **KISS** (*Keep It Simple, Stupid*) et **YAGNI** :
 
-1. **Pourquoi écarter le Short Polling HTTP ?** :
-   - Le client qui interroge périodiquement le serveur génère une latence moyenne de $N/2$ secondes et consomme de la bande passante inutilement lorsque tous les services sont `UP` (99 % du temps).
-2. **Pourquoi écarter les Server-Sent Events (SSE) ?** :
-   - SSE est limité à une communication **unidirectionnelle** (`Serveur -> Client`). Or, notre interface n'est pas uniquement un écran passif : elle intègre des **commandes interactives de simulation** pouvant être utilisées simultanément sur plusieurs postes.
-3. **Notre choix : WebSockets (`ws://` RFC 6455 — Canal TCP Full-Duplex Bidirectionnel)** :
-   - Connexion persistante **bidirectionnelle** à très faible latence ($< 5\text{ ms}$) entre le serveur (`wavre-ws-hub` piloté par l'événement Laravel `MicroserviceStatusUpdated`) et tous les écrans connectés.
-   - Dès qu'un opérateur clique sur *"Simuler Déconnexion"*, Laravel met à jour la base de données, pilote le conteneur Docker cible et diffuse l'événement `MicroserviceStatusUpdated` via le serveur WebSocket (`ws://localhost:6001`) : **l'alerte visuelle s'affiche en moins de 5 millisecondes sur tous les écrans connectés**, avec une architecture unique, propre et sans redondance.
+1. **Pourquoi écarter les WebSockets et les SSE ici ?** :
+   - Un conteneur Docker qui s'arrête (`docker stop wavre-ms-voirie`) ne peut pas émettre d'événement au moment où il meurt : le backend doit **obligatoirement** sonder activement les conteneurs à intervalle régulier.
+   - Ajouter un serveur WebSocket dédié ou un flux SSE persistant obligerait à maintenir en plus un démon de sonde perpétuel en tâche de fond et un broker de messages tiers — soit des composants supplémentaires susceptibles de tomber en panne.
+2. **Notre choix : Short Polling HTTP REST Stateless toutes les 2 secondes (`GET /api/microservices?probe=true`)** :
+   - Toutes les **2 secondes**, le Wallboard Angular interroge l'API REST Laravel.
+   - À chaque appel, Laravel sonde en direct les 5 conteneurs Docker (`ms-core` à `ms-salle` sur le réseau interne Docker en `< 15 ms`), met à jour MySQL si un conteneur s'est arrêté ou rallumé, et retourne le JSON consolidé.
+   - Parallèlement, tout clic sur un bouton de simulation (`POST /api/microservices/{slug}/simulate`) met à jour immédiatement l'interface et le conteneur cible sans même attendre la fin des 2 secondes.
+   - **Résultat** : Une alerte visuelle garantie en **moins de 2 secondes** (et immédiate lors d'une simulation UI), avec une architecture **100 % stateless, standard et immédiatement compréhensible**.
 
 ---
 
@@ -77,7 +78,7 @@ Un écran de monitoring mural doit être lisible à **plusieurs mètres de dista
 ## 🚀 2. Consignes pour Lancer le Projet
 
 ### 2.1 Démarrage clé-en-main avec Docker Desktop (Recommandé)
-L'ensemble du projet (Base MySQL 8 + API Laravel + Serveur WebSocket + Frontend Angular + **les 5 conteneurs Docker des microservices**) se lance en **une seule commande** :
+L'ensemble du projet (Base MySQL 8 + API Laravel + Frontend Angular + **les 5 conteneurs Docker des microservices**) se lance en **une seule commande** :
 
 ```bash
 docker compose up -d --build
@@ -92,10 +93,9 @@ Lors du démarrage, le conteneur `wavre-backend-api` exécute automatiquement :
 
 | Service | URL d'accès | Description |
 | :--- | :--- | :--- |
-| 🖥️ **Wallboard de Monitoring (Angular)** | **[http://localhost:4200](http://localhost:4200)** | Écran principal de supervision temps réel + Boutons de simulation |
-| 🔌 **API REST Laravel (JSON)** | **[http://localhost:8000/api/microservices](http://localhost:8000/api/microservices)** | État JSON des 5 microservices et résumé global |
+| 🖥️ **Wallboard de Monitoring (Angular)** | **[http://localhost:4200](http://localhost:4200)** | Écran principal de supervision (Polling 2s) + Boutons de simulation |
+| 🔌 **API REST Laravel (JSON)** | **[http://localhost:8000/api/microservices](http://localhost:8000/api/microservices)** | État JSON des 5 microservices et sonde directe Docker |
 | 📖 **Documentation Interactive Swagger UI** | **[http://localhost:8000/api/docs](http://localhost:8000/api/docs)** | Contrat OpenAPI 3.0.3 testable directement dans le navigateur |
-| ⚡ **Serveur WebSocket Temps Réel** | `ws://localhost:6001` | Serveur WebSocket RFC 6455 pour les alertes instantanées (`< 5 ms`) |
 | 🐳 **Sondes directes des 5 Microservices** | `http://localhost:8081/health` à `:8085/health` | `8081` (`core`), `8082` (`mailing`), `8083` (`carto`), `8084` (`voirie`), `8085` (`salle`) |
 
 ---
@@ -139,11 +139,11 @@ Le projet fournit **les deux méthodes** demandées dans l'énoncé :
 - ✅ **Supervision en temps réel des 5 microservices de la Ville de Wavre** (`core`, `mailing`, `carto`, `voirie`, `salle`) avec leurs rôles métiers exacts, ports, noms de conteneurs Docker, latences en millisecondes et taux de disponibilité (`Uptime %`).
 - ✅ **Alerte visuelle immédiate et haute visibilité** (bandeau d'alerte critique clignotant, halo rouge autour de l'écran, compteur de durée d'indisponibilité en direct, détection d'impact critique lorsque `core` est déconnecté).
 - ✅ **Boutons de simulation individuels et globaux** :
-  - Simulation de **Déconnexion (`DOWN`)** sur chaque microservice (met à jour la BDD + configure le vrai conteneur Docker pour renvoyer `HTTP 503` + diffuse l'alerte WebSocket).
+  - Simulation de **Déconnexion (`DOWN`)** sur chaque microservice (met à jour la BDD + configure le vrai conteneur Docker pour renvoyer `HTTP 503`).
   - Simulation de **Ralentissement (`DEGRADED`)** (injecte une latence élevée dans le conteneur Docker).
   - Simulation de **Reconnexion (`UP`)** (rétablit le conteneur en `HTTP 200`, lève l'alerte et calcule automatiquement la durée totale de la panne).
   - Boutons globaux : **"Tout rétablir (UP)"**, **"Simuler panne aléatoire (Chaos Test)"** et **"Sonder les conteneurs Docker (/ping)"**.
-- ✅ **Diffusion Temps Réel 100 % WebSockets (`ws://localhost:6001`)** propulsée par l'événement Laravel `MicroserviceStatusUpdated` (`ShouldBroadcastNow`) pour une réactivité inférieure à `5 ms` sur l'écran mural.
+- ✅ **Détection automatique d'extinction/redémarrage de conteneur Docker** (`docker stop` / `docker start` dans Docker Desktop) grâce au Short Polling HTTP REST (2s) couplé à la sonde TCP/HTTP Laravel.
 - ✅ **Journal d'Audit et d'Incidents Horodaté** (`service_logs`) affichant l'historique complet des déconnexions/reconnexions et les temps de coupure.
 - ✅ **Contrat OpenAPI 3.0.3 (`docs/openapi.yaml`)** et interface **Swagger UI** intégrée (`/api/docs`).
 - ✅ **Suite de tests automatisés PHPUnit** (`MicroserviceMonitoringTest`) et **Linters** (`Laravel Pint` PSR-12 + `ESLint`).
@@ -156,7 +156,6 @@ Le projet fournit **les deux méthodes** demandées dans l'énoncé :
 epreuve_lavarel_wavre/
 ├── backend/                                # Code Backend PHP 8.4 / Laravel (commenté en français)
 │   ├── app/
-│   │   ├── Events/MicroserviceStatusUpdated.php
 │   │   ├── Http/Controllers/Api/MicroserviceController.php
 │   │   ├── Http/Requests/SimulateMicroserviceRequest.php
 │   │   ├── Models/                         # Microservice.php, ServiceLog.php, HealthCheck.php
@@ -171,18 +170,17 @@ epreuve_lavarel_wavre/
 ├── frontend/                               # Code Frontend Angular / TypeScript / CSS Wallboard
 │   ├── src/app/
 │   │   ├── models/microservice.model.ts
-│   │   ├── services/monitoring.service.ts  # Client Temps Réel 100 % WebSockets (ws://localhost:6001)
+│   │   ├── services/monitoring.service.ts  # Service de supervision Short Polling HTTP REST (2s)
 │   │   └── app.component.*                 # Interface Wallboard, Alertes Visuelles & Simulation
 │   └── .eslintrc.json                      # Configuration du linter ESLint
 ├── docker/
 │   ├── backend/                            # Dockerfile PHP 8.4 + script d'initialisation automatique
-│   ├── microservice-node/                  # Image des 5 vrais conteneurs Docker (core, mailing, carto, voirie, salle)
-│   └── websocket-hub/                      # Serveur WebSocket Temps Réel RFC 6455 (port 6001)
+│   └── microservice-node/                  # Image des 5 vrais conteneurs Docker (core, mailing, carto, voirie, salle)
 ├── docs/
 │   ├── SCHEMA_RELATIONNEL.md               # Schéma relationnel BDD (Mermaid ERD + dictionnaire)
 │   ├── openapi.yaml                        # Contrat OpenAPI 3.0.3 complet
-│   └── GUIDE_EXAMEN_ORAL.md                # Guide de préparation à l'examen oral (Justification WebSockets)
+│   └── GUIDE_EXAMEN_ORAL.md                # Guide de préparation à l'examen oral (Justification Polling vs SSE/WS)
 ├── AGENTS.md & .agents/                    # Configuration des agents Antigravity (Backend & Frontend)
-├── docker-compose.yml                      # Orchestration complète des 9 conteneurs Docker
+├── docker-compose.yml                      # Orchestration complète des 8 conteneurs Docker
 └── README.md                               # Ce document (Réflexion, Lancement & Fonctionnalités)
 ```

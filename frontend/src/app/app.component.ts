@@ -4,10 +4,10 @@
  * ============================================================================
  * Composant Standalone Angular 18 pilotant l'écran mural (TV Wallboard) de
  * supervision des 5 microservices Docker (`core`, `mailing`, `carto`, `voirie`, `salle`)
- * via une architecture 100% WebSocket Temps Réel (`ws://localhost:6001`) et Signals.
+ * via une architecture de supervision HTTP REST (Sonde Docker toutes les 2s) et Signals.
  *
  * Fonctionnalités clés :
- *  1. Indicateur d'état WebSocket Temps Réel (`ws://localhost:6001` — Connecté / Latence < 5 ms).
+ *  1. Indicateur d'état : 🔄 Supervision HTTP REST Active • Sonde Docker toutes les 2s.
  *  2. Bandeau d'alerte critique rouge clignotant (@keyframes alertPulse) + Halo TV
  *     + Chronomètre de panne en direct à la seconde près (`00m 42s`).
  *  3. Mention spéciale si le microservice `core` (Interface Client) tombe à `DOWN`.
@@ -22,8 +22,8 @@ import {
   IncidentLogItem,
   MicroserviceItem,
   MicroserviceSlug,
+  PollingState,
   ServiceStatus,
-  WebSocketConnectionState,
 } from './models/microservice.model';
 import { RealtimeMonitoringService } from './services/monitoring.service';
 
@@ -48,7 +48,7 @@ export class AppComponent implements OnInit, OnDestroy {
   public ngOnInit(): void {
     this.updateClockDisplay();
 
-    // Horloge cadencée à 1 seconde (1000 ms) uniquement pour l'heure murale
+    // Horloge cadencée à 1 seconde (1000 ms) pour l'heure murale
     // et le calcul visuel des chronomètres de durée de panne (ex: `00m 42s`)
     this.clockSubscription = interval(1000).subscribe(() => {
       this.nowTimestampMs = Date.now();
@@ -71,10 +71,10 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Accès réactif à l'état du canal WebSocket (`ws://localhost:6001`) depuis le Signal `wsStateSignal`.
+   * Accès réactif à l'état de la supervision HTTP REST (`pollingStateSignal`).
    */
-  public get wsState(): WebSocketConnectionState {
-    return this.monitoringService.wsStateSignal();
+  public get pollingState(): PollingState {
+    return this.monitoringService.pollingStateSignal();
   }
 
   /**

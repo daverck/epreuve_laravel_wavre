@@ -1,7 +1,7 @@
 {
   "name": "wavre-wallboard-frontend",
   "version": "1.0.0",
-  "description": "Wallboard Temps Réel (Angular 18 Standalone) - Supervision des 5 Microservices Docker de la Ville de Wavre (WebSockets vs SSE vs Polling)",
+  "description": "Wallboard de Supervision (Angular 18 Standalone) - Monitoring HTTP REST des 5 Microservices Docker de la Ville de Wavre",
   "scripts": {
     "ng": "ng",
     "start": "ng serve --host 0.0.0.0 --port 4200",

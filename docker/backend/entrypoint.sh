@@ -30,13 +30,5 @@ fi
 echo "-> Exécution des migrations et du seeder (php artisan migrate --seed)..."
 php artisan migrate --seed --force
 
-echo "-> Démarrage du démon de surveillance Docker (Sonde -> WebSocket toutes les 2s)..."
-(
-    while true; do
-        php artisan microservices:probe >/dev/null 2>&1 || true
-        sleep 2
-    done
-) &
-
 echo "-> Serveur Laravel actif sur http://0.0.0.0:8000"
 exec php artisan serve --host=0.0.0.0 --port=8000

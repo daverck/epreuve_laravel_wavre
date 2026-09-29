@@ -24,7 +24,7 @@ services:
       retries: 10
 
   # ==========================================================================
-  # 2. BACKEND API REST (PHP 8.3 / Laravel 11 + Swagger UI)
+  # 2. BACKEND API REST (PHP 8.4 / Laravel + Swagger UI)
   # ==========================================================================
   backend:
     build:
@@ -50,12 +50,9 @@ services:
       DB_USERNAME: wavre
       DB_PASSWORD: secret
       DOCKER_PROBE_ENABLED: "true"
-      WS_HUB_URL: "http://ws-hub:6001/broadcast"
     depends_on:
       mysql:
         condition: service_healthy
-      ws-hub:
-        condition: service_started
       ms-core:
         condition: service_started
       ms-mailing:
@@ -70,23 +67,7 @@ services:
       - wavre-net
 
   # ==========================================================================
-  # 2b. SERVEUR WEBSOCKET TEMPS RÉEL (RFC 6455 - Port 6001)
-  # ==========================================================================
-  ws-hub:
-    build:
-      context: ./docker/websocket-hub
-      dockerfile: Dockerfile
-    container_name: wavre-ws-hub
-    restart: unless-stopped
-    environment:
-      PORT: 6001
-    ports:
-      - "6001:6001"
-    networks:
-      - wavre-net
-
-  # ==========================================================================
-  # 3. FRONTEND WALLBOARD (Angular + CSS Moderne Temps Réel)
+  # 3. FRONTEND WALLBOARD (Angular + CSS Moderne)
   # ==========================================================================
   frontend:
     image: node:20-alpine

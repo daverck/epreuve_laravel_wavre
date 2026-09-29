@@ -13,8 +13,8 @@ use Illuminate\Http\Response;
 
 /**
  * Contrôleur API principal gérant la supervision des 5 microservices de la Ville de Wavre,
- * la simulation de pannes (Chaos Engineering), la diffusion temps réel via WebSockets
- * (`MicroserviceStatusUpdated`) et la documentation interactive OpenAPI 3.0 / Swagger UI.
+ * la simulation de pannes (Chaos Engineering) via une architecture 100 % REST HTTP Stateless
+ * (Short Polling) et la documentation interactive OpenAPI 3.0 / Swagger UI.
  */
 class MicroserviceController extends Controller
 {
@@ -25,12 +25,13 @@ class MicroserviceController extends Controller
 
     /**
      * GET /api/microservices
-     * Retourne l'état initial des 5 microservices, le résumé global d'alerte
-     * et les 20 derniers incidents pour l'écran mural (Wallboard Angular).
+     * Interroge en direct les conteneurs Docker (`probe=true` par défaut) et retourne
+     * l'état courant des 5 microservices, le résumé global d'alerte et les 20 derniers
+     * incidents pour le rafraîchissement périodique (Short Polling) du Wallboard Angular.
      */
     public function index(Request $request): JsonResponse
     {
-        $probeDocker = $request->boolean('probe', false);
+        $probeDocker = $request->boolean('probe', true);
         $payload = $this->monitorService->getDashboardPayload($probeDocker);
 
         return response()->json($payload);
@@ -63,8 +64,7 @@ class MicroserviceController extends Controller
     /**
      * POST /api/microservices/{slug}/simulate
      * Simule la déconnexion (`DOWN`), le ralentissement (`DEGRADED`) ou la reconnexion (`UP`)
-     * d'un microservice spécifique et diffuse instantanément l'alerte en temps réel
-     * via WebSocket (`MicroserviceStatusUpdated`).
+     * d'un microservice spécifique et enregistre l'événement dans `service_logs`.
      */
     public function simulate(SimulateMicroserviceRequest $request, string $slug): JsonResponse
     {
@@ -98,7 +98,7 @@ class MicroserviceController extends Controller
     /**
      * POST /api/microservices/simulate-all
      * Applique un statut global (`UP`, `DOWN` ou `DEGRADED`) aux 5 microservices en un seul clic
-     * et diffuse chaque changement d'état en temps réel via WebSocket.
+     * (ex: rétablissement général depuis le Wallboard).
      */
     public function simulateAll(Request $request): JsonResponse
     {
@@ -217,7 +217,7 @@ class MicroserviceController extends Controller
 <body>
     <div class="wavre-banner">
         <h1>Ville de Wavre — Contrat OpenAPI 3.0 (Supervision des 5 Microservices)</h1>
-        <span>Laravel 11 REST + WebSockets Temps Réel</span>
+        <span>Laravel 11 REST HTTP Stateless (Short Polling)</span>
     </div>
     <div id="swagger-ui"></div>
     <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>

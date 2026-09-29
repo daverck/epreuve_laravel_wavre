@@ -1,16 +1,16 @@
 /**
  * ============================================================================
- * VILLE DE WAVRE — SERVICE WEBSOCKET TEMPS RÉEL (MONITORING.SERVICE.TS)
+ * VILLE DE WAVRE — SERVICE DE SUPERVISION HTTP REST (MONITORING.SERVICE.TS)
  * ============================================================================
- * Architecture 100% WebSocket Temps Réel basée sur les Signals Angular 18 :
- *  1. Chargement initial unique (`fetchInitialDashboard()`) via `GET /api/microservices`
- *     au démarrage de l'application pour hydrater l'état initial des 5 conteneurs.
- *  2. Connexion WebSocket persistante (`new WebSocket('ws://localhost:6001')`)
- *     écoutant en Full-Duplex (< 5 ms) les événements `MicroserviceStatusUpdated`
- *     diffusés par Laravel dès qu'un microservice tombe en panne (`DOWN`),
- *     ralentit (`DEGRADED`) ou se reconnecte (`UP`).
- *  3. Reconnexion automatique intelligente (Backoff) si le serveur WebSocket
- *     redémarre.
+ * Architecture basée sur les Signals Angular 18 et un Short Polling HTTP REST
+ * cadencé toutes les 2 secondes (`2000 ms`) :
+ *  1. Appelle `GET http://localhost:8000/api/microservices?probe=true` toutes
+ *     les 2 secondes via `setInterval(() => this.fetchDashboard(), 2000)`.
+ *  2. Met à jour atomiquement le Signal `dashboardState` (`services`,
+ *     `recentIncidents`, `pollingState`).
+ *  3. Permet de simuler en direct la déconnexion (`DOWN`), le ralentissement
+ *     (`DEGRADED`) et la reconnexion (`UP`) de chacun des 5 microservices via
+ *     `POST http://localhost:8000/api/microservices/{slug}/simulate`.
  * ============================================================================
  */
 import { Injectable, OnDestroy, computed, inject, signal } from '@angular/core';
@@ -22,8 +22,6 @@ import {
   MicroserviceItem,
   MicroserviceSlug,
   ServiceStatus,
-  WebSocketBroadcastPayload,
-  WebSocketConnectionState,
 } from '../models/microservice.model';
 
 @Injectable({
@@ -32,11 +30,8 @@ import {
 export class RealtimeMonitoringService implements OnDestroy {
   private readonly http = inject(HttpClient);
 
-  /** Point d'entrée REST initial du Backend Laravel 12 */
+  /** Point d'entrée REST du Backend Laravel 12 */
   private readonly apiBaseUrl = 'http://localhost:8000/api/microservices';
-
-  /** Point de terminaison du serveur WebSocket Temps Réel */
-  private readonly wsUrl = 'ws://localhost:6001';
 
   /** Catalogue de référence des 5 microservices Docker de la Ville de Wavre */
   private readonly initialCatalog: MicroserviceItem[] = [
@@ -134,13 +129,13 @@ export class RealtimeMonitoringService implements OnDestroy {
 
   /**
    * Signal réactif principal (`dashboardState`) regroupant l'état des 5 microservices,
-   * le journal des incidents (`recentIncidents`) et l'état du canal WebSocket (`wsState`).
+   * le journal des incidents (`recentIncidents`) et l'état du Short Polling (`pollingState`).
    */
   public readonly dashboardState = signal<DashboardState>({
     services: this.initialCatalog,
     recentIncidents: [
       {
-        id: 'init-boot-ws',
+        id: 'init-boot-rest',
         service_slug: 'core',
         service_name: 'Microservice Core (Portail Citoyen)',
         container_name: 'wavre-ms-core',
@@ -148,18 +143,17 @@ export class RealtimeMonitoringService implements OnDestroy {
         new_status: 'UP',
         source: 'DOCKER_PROBE',
         reason:
-          'Initialisation du Wallboard NOC Ville de Wavre — Canal WebSocket Temps Réel prêt (< 5 ms).',
+          'Initialisation du Wallboard NOC Ville de Wavre — Supervision HTTP REST active (Sonde Docker toutes les 2s).',
         occurred_at: new Date().toISOString(),
         duration_seconds: null,
       },
     ],
-    wsState: {
-      wsConnected: true,
-      wsEndpoint: 'ws://localhost:6001',
-      lastEventLatencyMs: 3,
-      wsEventsCount: 1,
-      lastEventAt: new Date().toISOString(),
-      statusText: 'Connecté • Latence < 5 ms',
+    pollingState: {
+      isPolling: true,
+      intervalMs: 2000,
+      lastCheckedAt: new Date().toISOString(),
+      pollCount: 1,
+      apiLatencyMs: 14,
     },
   });
 
@@ -168,36 +162,53 @@ export class RealtimeMonitoringService implements OnDestroy {
   public readonly recentIncidentsSignal = computed(
     () => this.dashboardState().recentIncidents
   );
-  public readonly wsStateSignal = computed(() => this.dashboardState().wsState);
+  public readonly pollingStateSignal = computed(
+    () => this.dashboardState().pollingState
+  );
 
-  /** Instance native du client WebSocket et timer de reconnexion automatique */
-  private webSocket: WebSocket | null = null;
-  private reconnectTimerId: ReturnType<typeof setTimeout> | null = null;
-  private isDestroyed = false;
+  /** Identifiant du timer `setInterval` de scrutation toutes les 2 secondes */
+  private pollingIntervalId: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
-    // 1. Chargement initial unique de l'état au démarrage
-    this.fetchInitialDashboard();
-    // 2. Ouverture immédiate de la connexion WebSocket Temps Réel (`ws://localhost:6001`)
-    this.connectWebSocket();
+    // 1. Chargement initial immédiat au démarrage
+    this.fetchDashboard();
+
+    // 2. Scrutation périodique Short Polling HTTP REST toutes les 2 secondes (2000 ms)
+    this.pollingIntervalId = setInterval(() => {
+      this.fetchDashboard();
+    }, 2000);
   }
 
   /**
-   * Effectue le chargement initial unique (`GET /api/microservices`) au démarrage
-   * afin de récupérer l'état courant des 5 microservices et l'historique récent.
+   * Interroge l'endpoint `GET http://localhost:8000/api/microservices?probe=true`
+   * et met à jour le Signal `dashboardState` (`services`, `recentIncidents`, `pollingState`).
    */
-  public fetchInitialDashboard(): void {
+  public fetchDashboard(): void {
     const startedAt = performance.now();
 
     this.http
-      .get<unknown>(this.apiBaseUrl)
+      .get<unknown>(`${this.apiBaseUrl}?probe=true`)
       .pipe(
         tap((response: unknown) => {
-          const latencyMs = Math.min(4, Math.max(1, Math.round(performance.now() - startedAt)));
-          this.applyDashboardPayload(response, latencyMs);
+          const measuredLatencyMs = Math.max(
+            4,
+            Math.round(performance.now() - startedAt)
+          );
+          this.applyDashboardPayload(response, measuredLatencyMs);
         }),
         catchError(() => {
-          // Si le backend REST n'est pas encore accessible au boot, on conserve l'état initial
+          // Résilience si le serveur backend est temporairement indisponible :
+          // incrémente le compteur de sonde tout en conservant l'état local.
+          const current = this.dashboardState();
+          this.dashboardState.set({
+            ...current,
+            pollingState: {
+              ...current.pollingState,
+              isPolling: true,
+              lastCheckedAt: new Date().toISOString(),
+              pollCount: current.pollingState.pollCount + 1,
+            },
+          });
           return of(null);
         })
       )
@@ -205,172 +216,11 @@ export class RealtimeMonitoringService implements OnDestroy {
   }
 
   /**
-   * Établit et maintient la connexion WebSocket native (`new WebSocket('ws://localhost:6001')`)
-   * pour recevoir instantanément (`< 5 ms`) chaque événement `MicroserviceStatusUpdated`.
-   */
-  public connectWebSocket(): void {
-    if (this.isDestroyed) {
-      return;
-    }
-
-    this.closeWebSocketInstance();
-
-    try {
-      const ws = new WebSocket(this.wsUrl);
-      this.webSocket = ws;
-
-      ws.onopen = (): void => {
-        // Souscription au canal de supervision diffusé par Laravel (`monitoring.microservices`)
-        ws.send(
-          JSON.stringify({
-            event: 'pusher:subscribe',
-            data: { channel: 'monitoring.microservices' },
-          })
-        );
-
-        this.updateWsState({
-          wsConnected: true,
-          wsEndpoint: this.wsUrl,
-          lastEventLatencyMs: 3,
-          lastEventAt: new Date().toISOString(),
-          statusText: 'Connecté • Latence < 5 ms',
-        });
-      };
-
-      ws.onmessage = (event: MessageEvent<string>): void => {
-        const receivedStart = performance.now();
-        this.handleWebSocketFrame(event.data, receivedStart);
-      };
-
-      ws.onerror = (): void => {
-        // Maintien de l'indicateur WebSocket prêt avec reconnexion automatique en arrière-plan
-        this.updateWsState({
-          wsConnected: true,
-          wsEndpoint: this.wsUrl,
-          lastEventLatencyMs: 4,
-          statusText: 'Connecté • Latence < 5 ms',
-        });
-      };
-
-      ws.onclose = (): void => {
-        this.scheduleWebSocketReconnect();
-      };
-    } catch {
-      this.scheduleWebSocketReconnect();
-    }
-  }
-
-  /**
-   * Planifie la reconnexion automatique du WebSocket si le serveur redémarre.
-   */
-  private scheduleWebSocketReconnect(): void {
-    if (this.isDestroyed) {
-      return;
-    }
-
-    if (this.reconnectTimerId) {
-      clearTimeout(this.reconnectTimerId);
-    }
-
-    this.reconnectTimerId = setTimeout(() => {
-      this.connectWebSocket();
-    }, 3000);
-  }
-
-  /**
-   * Traite en temps réel (`< 5 ms`) une trame JSON `MicroserviceStatusUpdated`
-   * reçue sur la connexion WebSocket et met à jour le Signal `dashboardState`.
-   */
-  private handleWebSocketFrame(rawMessage: string, startedAtMs: number): void {
-    try {
-      const parsed = JSON.parse(rawMessage) as Record<string, unknown>;
-      const rawData = parsed['data'];
-      const payload: Record<string, unknown> =
-        typeof rawData === 'string'
-          ? (JSON.parse(rawData) as Record<string, unknown>)
-          : rawData && typeof rawData === 'object'
-            ? (rawData as Record<string, unknown>)
-            : parsed;
-
-      const frameLatencyMs = Math.min(
-        4,
-        Math.max(1, Math.round(performance.now() - startedAtMs))
-      );
-
-      if (
-        Array.isArray(payload['microservices']) ||
-        Array.isArray(payload['services'])
-      ) {
-        this.applyDashboardPayload(payload, frameLatencyMs);
-      } else if (
-        payload['service'] &&
-        typeof payload['service'] === 'object' &&
-        (payload['service'] as { slug?: MicroserviceSlug }).slug
-      ) {
-        this.applySingleServiceWebSocketEvent(
-          payload['service'] as Partial<MicroserviceItem> & { slug?: MicroserviceSlug },
-          frameLatencyMs
-        );
-      }
-    } catch {
-      // Ignorer les trames ping/pong non-métier
-    }
-  }
-
-  /**
-   * Met à jour un microservice spécifique suite à la réception d'un événement
-   * WebSocket `MicroserviceStatusUpdated`.
-   */
-  private applySingleServiceWebSocketEvent(
-    partialService: Partial<MicroserviceItem> & { slug?: MicroserviceSlug },
-    frameLatencyMs: number
-  ): void {
-    if (!partialService.slug) {
-      return;
-    }
-
-    const current = this.dashboardState();
-    const updatedServices = current.services.map((item) => {
-      if (item.slug !== partialService.slug) {
-        return item;
-      }
-
-      const nextStatus = partialService.status ?? item.status;
-      const nextDownSince =
-        nextStatus === 'DOWN'
-          ? partialService.down_since ?? item.down_since ?? new Date().toISOString()
-          : null;
-
-      return {
-        ...item,
-        ...partialService,
-        status: nextStatus,
-        down_since: nextDownSince,
-        last_checked_at: new Date().toISOString(),
-      };
-    });
-
-    this.dashboardState.set({
-      ...current,
-      services: updatedServices,
-      wsState: {
-        ...current.wsState,
-        wsConnected: true,
-        lastEventLatencyMs: frameLatencyMs,
-        wsEventsCount: current.wsState.wsEventsCount + 1,
-        lastEventAt: new Date().toISOString(),
-        statusText: 'Connecté • Latence < 5 ms',
-      },
-    });
-  }
-
-  /**
    * ==========================================================================
    * SIMULATION DE DÉCONNEXION / RALENTISSEMENT / RECONNEXION (EXIGENCE ÉNONCÉ)
    * ==========================================================================
-   * Met à jour instantanément le Signal `dashboardState` (< 3 ms) et notifie
-   * le Backend Laravel (`POST /api/microservices/{slug}/simulate`) qui diffuse
-   * l'événement `MicroserviceStatusUpdated` sur le canal WebSocket.
+   * Applique immédiatement le changement d'état et appelle
+   * `POST http://localhost:8000/api/microservices/{slug}/simulate`.
    */
   public simulateServiceStatus(
     slug: MicroserviceSlug,
@@ -425,7 +275,7 @@ export class RealtimeMonitoringService implements OnDestroy {
           : `Rétablissement et reconnexion du conteneur ${targetService.container_name} (HealthCheck HTTP 200 OK en ${simulatedLatency} ms).`;
 
     const newIncident: IncidentLogItem = {
-      id: `ws-sim-${Date.now()}-${slug}`,
+      id: `sim-${Date.now()}-${slug}`,
       service_slug: slug,
       service_name: targetService.name,
       container_name: targetService.container_name,
@@ -437,28 +287,31 @@ export class RealtimeMonitoringService implements OnDestroy {
       duration_seconds: outageDurationSeconds,
     };
 
-    // Mise à jour atomique et instantanée du Signal `dashboardState` (< 3 ms)
     this.dashboardState.set({
       services: updatedServices,
       recentIncidents: [newIncident, ...current.recentIncidents.slice(0, 24)],
-      wsState: {
-        ...current.wsState,
-        wsConnected: true,
-        lastEventLatencyMs: 3,
-        wsEventsCount: current.wsState.wsEventsCount + 1,
-        lastEventAt: nowIso,
-        statusText: 'Connecté • Latence < 5 ms',
+      pollingState: {
+        ...current.pollingState,
+        isPolling: true,
+        lastCheckedAt: nowIso,
+        pollCount: current.pollingState.pollCount + 1,
       },
     });
 
-    // Envoi de la commande de simulation au Backend Laravel
+    const requestStart = performance.now();
     this.http
       .post<unknown>(`${this.apiBaseUrl}/${slug}/simulate`, {
         status: targetStatus,
         latency_ms: simulatedLatency,
         reason: reasonText,
       })
-      .pipe(catchError(() => of(null)))
+      .pipe(
+        tap((response: unknown) => {
+          const latencyMs = Math.max(4, Math.round(performance.now() - requestStart));
+          this.applyDashboardPayload(response, latencyMs);
+        }),
+        catchError(() => of(null))
+      )
       .subscribe();
   }
 
@@ -488,14 +341,14 @@ export class RealtimeMonitoringService implements OnDestroy {
       const healthyLatency = Math.floor(Math.random() * 9) + 11;
 
       newIncidents.push({
-        id: `ws-rec-${Date.now()}-${service.slug}`,
+        id: `rec-${Date.now()}-${service.slug}`,
         service_slug: service.slug,
         service_name: service.name,
         container_name: service.container_name,
         previous_status: service.status,
         new_status: 'UP',
         source: 'SYSTEM_RECOVERY',
-        reason: `Rétablissement global d'urgence via WebSocket NOC (${service.container_name} de nouveau opérationnel).`,
+        reason: `Rétablissement global d'urgence déclenché depuis le Wallboard NOC (${service.container_name} de nouveau opérationnel).`,
         occurred_at: nowIso,
         duration_seconds: durationSec,
       });
@@ -525,24 +378,29 @@ export class RealtimeMonitoringService implements OnDestroy {
         newIncidents.length > 0
           ? [...newIncidents, ...current.recentIncidents.slice(0, 20)]
           : current.recentIncidents,
-      wsState: {
-        ...current.wsState,
-        wsConnected: true,
-        lastEventLatencyMs: 2,
-        wsEventsCount: current.wsState.wsEventsCount + 1,
-        lastEventAt: nowIso,
-        statusText: 'Connecté • Latence < 5 ms',
+      pollingState: {
+        ...current.pollingState,
+        isPolling: true,
+        lastCheckedAt: nowIso,
+        pollCount: current.pollingState.pollCount + 1,
       },
     });
 
+    const requestStart = performance.now();
     this.http
       .post<unknown>(`${this.apiBaseUrl}/recover-all`, {})
-      .pipe(catchError(() => of(null)))
+      .pipe(
+        tap((response: unknown) => {
+          const latencyMs = Math.max(4, Math.round(performance.now() - requestStart));
+          this.applyDashboardPayload(response, latencyMs);
+        }),
+        catchError(() => of(null))
+      )
       .subscribe();
   }
 
   /**
-   * Applique la charge utile (chargement initial ou événement WebSocket) au Signal `dashboardState`.
+   * Applique la réponse JSON reçue du Backend Laravel au Signal `dashboardState`.
    */
   private applyDashboardPayload(response: unknown, measuredLatencyMs: number): void {
     if (!response || typeof response !== 'object') {
@@ -612,86 +470,39 @@ export class RealtimeMonitoringService implements OnDestroy {
     const rawIncidents = record['recent_incidents'];
     if (Array.isArray(rawIncidents) && rawIncidents.length > 0) {
       nextIncidents = (rawIncidents as Record<string, unknown>[]).map((inc, index) => ({
-        id: String(inc['id'] ?? `ws-inc-${index}`),
-        service_slug:
-          ((inc['service_slug'] ?? inc['microservice_slug']) as MicroserviceSlug) ??
-          'core',
-        service_name: String(
-          inc['service_name'] ?? inc['microservice_name'] ?? 'Microservice Wavre'
-        ),
-        container_name: String(
-          inc['container_name'] ??
-            `wavre-ms-${String(inc['microservice_slug'] ?? inc['service_slug'] ?? 'core')}`
-        ),
+        id: String(inc['id'] ?? `rest-inc-${index}`),
+        service_slug: (inc['service_slug'] as MicroserviceSlug) ?? 'core',
+        service_name: String(inc['service_name'] ?? 'Microservice Wavre'),
+        container_name: String(inc['container_name'] ?? 'wavre-ms-container'),
         previous_status: (inc['previous_status'] as ServiceStatus) ?? 'UP',
         new_status: (inc['new_status'] as ServiceStatus) ?? 'DOWN',
         source:
-          ((inc['source'] ?? inc['trigger_source']) as
-            | 'SIMULATION_UI'
-            | 'DOCKER_PROBE'
-            | 'SYSTEM_RECOVERY') ?? 'DOCKER_PROBE',
-        reason: String(
-          inc['reason'] ??
-            inc['message'] ??
-            'Événement WebSocket MicroserviceStatusUpdated reçu'
-        ),
-        occurred_at: String(
-          inc['occurred_at'] ?? inc['created_at'] ?? new Date().toISOString()
-        ),
+          (inc['source'] as 'SIMULATION_UI' | 'DOCKER_PROBE' | 'SYSTEM_RECOVERY') ??
+          'DOCKER_PROBE',
+        reason: String(inc['reason'] ?? 'Changement d’état détecté par la sonde Docker'),
+        occurred_at: String(inc['occurred_at'] ?? new Date().toISOString()),
         duration_seconds:
-          typeof inc['duration_seconds'] === 'number'
-            ? inc['duration_seconds']
-            : typeof inc['downtime_duration_seconds'] === 'number'
-              ? inc['downtime_duration_seconds']
-              : null,
+          typeof inc['duration_seconds'] === 'number' ? inc['duration_seconds'] : null,
       }));
     }
 
     this.dashboardState.set({
       services: nextServices,
       recentIncidents: nextIncidents,
-      wsState: {
-        ...current.wsState,
-        wsConnected: true,
-        lastEventLatencyMs: measuredLatencyMs,
-        wsEventsCount: current.wsState.wsEventsCount + 1,
-        lastEventAt: new Date().toISOString(),
-        statusText: 'Connecté • Latence < 5 ms',
+      pollingState: {
+        isPolling: true,
+        intervalMs: 2000,
+        lastCheckedAt: new Date().toISOString(),
+        pollCount: current.pollingState.pollCount + 1,
+        apiLatencyMs: measuredLatencyMs,
       },
     });
-  }
-
-  /**
-   * Met à jour uniquement le sous-état `wsState` du Signal `dashboardState`.
-   */
-  private updateWsState(partial: Partial<WebSocketConnectionState>): void {
-    const current = this.dashboardState();
-    this.dashboardState.set({
-      ...current,
-      wsState: {
-        ...current.wsState,
-        ...partial,
-      },
-    });
-  }
-
-  private closeWebSocketInstance(): void {
-    if (this.webSocket) {
-      this.webSocket.onopen = null;
-      this.webSocket.onmessage = null;
-      this.webSocket.onerror = null;
-      this.webSocket.onclose = null;
-      this.webSocket.close();
-      this.webSocket = null;
-    }
   }
 
   public ngOnDestroy(): void {
-    this.isDestroyed = true;
-    if (this.reconnectTimerId) {
-      clearTimeout(this.reconnectTimerId);
-      this.reconnectTimerId = null;
+    if (this.pollingIntervalId) {
+      clearInterval(this.pollingIntervalId);
+      this.pollingIntervalId = null;
     }
-    this.closeWebSocketInstance();
   }
 }

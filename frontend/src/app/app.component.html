@@ -5,7 +5,7 @@
   Interface haute visibilité conçue pour l'équipe IT de la Ville de Wavre :
    1. Halo rouge pulsé sur tout le cadre de l'écran dès qu'un service est DOWN
    2. Bandeau d'alerte critique clignotant (@keyframes alertPulse) avec chronomètre
-   3. Indicateur d'état WebSocket Temps Réel (ws://localhost:6001 — Connecté / Latence < 5 ms)
+   3. Indicateur : 🔄 Supervision HTTP REST Active • Sonde Docker toutes les 2s
    4. Grille des 5 microservices Docker (core, mailing, carto, voirie, salle)
    5. Journal chronologique des incidents en direct (recent_incidents)
   ============================================================================
@@ -52,7 +52,7 @@
   </section>
 
   <!-- ========================================================================
-       2. EN-TÊTE OFFICIEL NOC : VILLE DE WAVRE + INDICATEUR WEBSOCKET TEMPS RÉEL
+       2. EN-TÊTE OFFICIEL NOC : VILLE DE WAVRE + INDICATEUR SUPERVISION HTTP REST
        ======================================================================== -->
   <header class="wallboard-header">
     <div class="brand-block">
@@ -62,19 +62,18 @@
       </div>
       <div class="brand-titles">
         <div class="official-overline">
-          ADMINISTRATION COMMUNALE DE WAVRE • ARCHITECTURE DOCKER &amp; WEBSOCKETS TEMPS RÉEL
+          ADMINISTRATION COMMUNALE DE WAVRE • ARCHITECTURE DOCKER &amp; LARAVEL 12
         </div>
         <h1 class="wallboard-main-title">
           VILLE DE WAVRE — SUPERVISION DES MICROSERVICES DOCKER
         </h1>
 
-        <!-- Indicateur d'état WebSocket Temps Réel épuré (ws://localhost:6001 — Connecté / Latence < 5 ms) -->
-        <div class="ws-status-bar">
-          <span class="ws-live-dot" [class.ws-live-connected]="wsState.wsConnected"></span>
-          <span class="ws-status-title">⚡ WebSocket Temps Réel :</span>
-          <code class="ws-endpoint mono">{{ wsState.wsEndpoint }}</code>
-          <span class="ws-badge-ok">{{ wsState.statusText }} ({{ wsState.lastEventLatencyMs }} ms)</span>
-          <span class="ws-events-counter mono">• {{ wsState.wsEventsCount }} événement(s) reçu(s)</span>
+        <!-- Indicateur simple et lisible de supervision HTTP REST toutes les 2 secondes -->
+        <div class="rest-status-bar">
+          <span class="rest-live-dot" [class.rest-live-active]="pollingState.isPolling"></span>
+          <span class="rest-status-title">🔄 Supervision HTTP REST Active • Sonde Docker toutes les 2s</span>
+          <span class="rest-badge-ok">API {{ pollingState.apiLatencyMs }} ms</span>
+          <span class="rest-events-counter mono">• Cycle #{{ pollingState.pollCount }}</span>
         </div>
       </div>
     </div>
@@ -112,7 +111,7 @@
       <div class="section-title-bar">
         <h2>ÉTAT EN TEMPS RÉEL DES 5 CONTENEURS DOCKER DE LA VILLE DE WAVRE</h2>
         <span class="section-subtitle">
-          Cliquez sur les boutons de simulation de n'importe quelle carte pour tester l'alerte WebSocket immédiate (&lt; 5 ms)
+          Cliquez sur les boutons de simulation de n'importe quelle carte pour tester la détection immédiate des pannes
         </span>
       </div>
 
@@ -188,9 +187,9 @@
               <span class="metric-label">CHARGE CPU / RAM</span>
               <span class="metric-val mono">{{ service.cpu_usage_percent }}% • {{ service.memory_mb }} Mo</span>
             </div>
-            <div class="metric-cell metric-cell-full">
-              <span class="metric-label">SONDE DOCKER (HEALTHCHECK INTERNE)</span>
-              <span class="metric-val metric-val-url mono">{{ service.endpoint_url }}</span>
+            <div class="metric-cell">
+              <span class="metric-label">SONDE DOCKER</span>
+              <span class="metric-val mono">{{ service.endpoint_url }}</span>
             </div>
           </div>
 

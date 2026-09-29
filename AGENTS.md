@@ -6,9 +6,9 @@ Il est conçu pour être développé et maintenu par deux agents spécialisés (
 ## Règles Impératives Communes
 1. **Explicabilité pour l'Examen Oral** :
    - Chaque classe, méthode et bloc complexe doit comporter des **commentaires pédagogiques en français** expliquant le *Pourquoi* (choix d'architecture) en plus du *Comment*.
-2. **Architecture Temps Réel : Choix Exclusif des WebSockets (`ws://`)** :
-   - Pour répondre au besoin d'afficher **une alerte visuelle rapidement** dès qu'un microservice se déconnecte, nous avons choisi **exclusivement les WebSockets (`ws://localhost:6001` RFC 6455)** (en écartant le Short Polling trop coûteux en requêtes HTTP et les SSE limités à de l'unidirectionnel).
-   - Dès qu'une déconnexion ou reconnexion a lieu, Laravel émet l'événement `MicroserviceStatusUpdated` (`ShouldBroadcastNow`) qui est poussé en moins de `5 ms` par WebSocket à tous les écrans connectés.
+2. **Architecture de Supervision : Choix du Short Polling HTTP REST Stateless (2s) — Principe KISS / YAGNI** :
+   - Pour superviser les **5 microservices internes** de la Ville de Wavre et afficher une alerte visuelle rapide dès qu'un conteneur se déconnecte, l'écran Angular interroge l'API REST Laravel (`GET /api/microservices?probe=true`) toutes les **2 secondes**.
+   - À chaque appel, Laravel sonde directement les 5 conteneurs Docker (`ms-core` à `ms-salle`), met à jour MySQL et retourne l'état consolidé, sans complexité inutile de serveur WebSocket ou de démon supplémentaire.
 3. **Les 5 Microservices Officiels de la Ville de Wavre** :
    - `core` : Sert l'interface client (Service critique — impacte l'ensemble du système s'il est `DOWN`)
    - `mailing` : Envoie les mails pour les différents processus
