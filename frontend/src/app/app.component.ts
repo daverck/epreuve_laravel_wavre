@@ -3,14 +3,14 @@
  * VILLE DE WAVRE — COMPOSANT PRINCIPAL DU WALLBOARD NOC (APP.COMPONENT.TS)
  * ============================================================================
  * Composant Standalone Angular 18 pilotant l'écran mural (TV Wallboard) de
- * supervision des 5 microservices Docker (`core`, `mailing`, `carto`, `voirie`, `salle`).
+ * supervision des 5 microservices Docker (`core`, `mailing`, `carto`, `voirie`, `salle`)
+ * via une architecture 100% WebSocket Temps Réel (`ws://localhost:6001`) et Signals.
  *
- * Fonctionnalités clés pour le Jury de l'Épreuve Technique :
- *  1. Détection visuelle critique immédiate (Bandeau rouge clignotant + Halo TV
- *     + Chronomètre de panne en direct à la seconde près `00m 42s`).
- *  2. Mention spéciale si le microservice `core` (Portail Citoyen) tombe à `DOWN`.
- *  3. Sélecteur interactif Temps Réel (`WEBSOCKET` ⚡ vs `SSE` 📡 vs `POLLING` 🔄)
- *     et panneau dépliable "Mémo Examen Oral : Pourquoi WebSockets vs SSE vs Polling ?".
+ * Fonctionnalités clés :
+ *  1. Indicateur d'état WebSocket Temps Réel (`ws://localhost:6001` — Connecté / Latence < 5 ms).
+ *  2. Bandeau d'alerte critique rouge clignotant (@keyframes alertPulse) + Halo TV
+ *     + Chronomètre de panne en direct à la seconde près (`00m 42s`).
+ *  3. Mention spéciale si le microservice `core` (Interface Client) tombe à `DOWN`.
  *  4. Boutons de simulation directe sur chaque carte microservice :
  *     🔴 Simuler Déconnexion (DOWN) | 🟠 Simuler Ralentissement (DEGRADED) | 🟢 Simuler Reconnexion (UP).
  * ============================================================================
@@ -22,10 +22,8 @@ import {
   IncidentLogItem,
   MicroserviceItem,
   MicroserviceSlug,
-  ProtocolComparisonRow,
-  RealtimeProtocolMetrics,
-  RealtimeTransportMode,
   ServiceStatus,
+  WebSocketConnectionState,
 } from './models/microservice.model';
 import { RealtimeMonitoringService } from './services/monitoring.service';
 
@@ -39,70 +37,44 @@ import { RealtimeMonitoringService } from './services/monitoring.service';
 export class AppComponent implements OnInit, OnDestroy {
   private readonly monitoringService = inject(RealtimeMonitoringService);
 
-  /** Liste réactive des 5 microservices de la Ville de Wavre */
-  public microservices: MicroserviceItem[] = [];
-
-  /** Journal chronologique des incidents en direct (`recent_incidents`) */
-  public recentIncidents: IncidentLogItem[] = [];
-
-  /** Métriques en direct du protocole Temps Réel actif (WebSocket / SSE / Polling) */
-  public protocolMetrics: RealtimeProtocolMetrics = {
-    activeMode: 'WEBSOCKET',
-    connectionState: 'CONNECTE',
-    eventsReceivedCount: 1,
-    lastProtocolLatencyMs: 5,
-    lastEventTimestamp: new Date().toISOString(),
-    endpointDisplay: 'ws://localhost:6001 (Canal: monitoring.microservices)',
-    statusDetail: 'Canal Full-Duplex WebSocket actif (< 10 ms).',
-  };
-
-  /** Tableau comparatif pour le Mémo Examen Oral */
-  public readonly protocolComparisonRows: ProtocolComparisonRow[] =
-    this.monitoringService.getProtocolComparisonTable();
-
-  /** Contrôle l'ouverture du panneau pédagogique "Mémo Examen Oral" */
-  public isExamMemoExpanded = false;
-
   /** Horloge murale NOC temps réel (mise à jour chaque seconde) */
   public currentWallboardClock = '';
 
   /** Timestamp courant (ms) rafraîchi chaque seconde pour les chronomètres de panne */
   public nowTimestampMs: number = Date.now();
 
-  private readonly subscriptions = new Subscription();
+  private clockSubscription: Subscription | null = null;
 
   public ngOnInit(): void {
     this.updateClockDisplay();
 
-    // Abonnement à la liste des 5 microservices
-    this.subscriptions.add(
-      this.monitoringService.microservices$.subscribe((services) => {
-        this.microservices = services;
-      })
-    );
+    // Horloge cadencée à 1 seconde (1000 ms) uniquement pour l'heure murale
+    // et le calcul visuel des chronomètres de durée de panne (ex: `00m 42s`)
+    this.clockSubscription = interval(1000).subscribe(() => {
+      this.nowTimestampMs = Date.now();
+      this.updateClockDisplay();
+    });
+  }
 
-    // Abonnement au journal des incidents en direct
-    this.subscriptions.add(
-      this.monitoringService.incidents$.subscribe((incidents) => {
-        this.recentIncidents = incidents;
-      })
-    );
+  /**
+   * Accès réactif aux 5 microservices depuis le Signal `servicesSignal`.
+   */
+  public get microservices(): MicroserviceItem[] {
+    return this.monitoringService.servicesSignal();
+  }
 
-    // Abonnement aux métriques du protocole Temps Réel
-    this.subscriptions.add(
-      this.monitoringService.protocolMetrics$.subscribe((metrics) => {
-        this.protocolMetrics = metrics;
-      })
-    );
+  /**
+   * Accès réactif au journal des incidents depuis le Signal `recentIncidentsSignal`.
+   */
+  public get recentIncidents(): IncidentLogItem[] {
+    return this.monitoringService.recentIncidentsSignal();
+  }
 
-    // Horloge cadencée à 1 seconde (1000 ms) pour mettre à jour l'heure murale
-    // et les chronomètres de durée de panne (ex: `00m 42s`)
-    this.subscriptions.add(
-      interval(1000).subscribe(() => {
-        this.nowTimestampMs = Date.now();
-        this.updateClockDisplay();
-      })
-    );
+  /**
+   * Accès réactif à l'état du canal WebSocket (`ws://localhost:6001`) depuis le Signal `wsStateSignal`.
+   */
+  public get wsState(): WebSocketConnectionState {
+    return this.monitoringService.wsStateSignal();
   }
 
   /**
@@ -156,21 +128,6 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Permet à l'opérateur (ou au jury) de basculer à chaud entre
-   * `WEBSOCKET` ⚡, `SSE` 📡 et `POLLING` 🔄.
-   */
-  public selectTransportMode(mode: RealtimeTransportMode): void {
-    this.monitoringService.switchTransportMode(mode);
-  }
-
-  /**
-   * Bascule l'affichage du panneau "Mémo Examen Oral : Pourquoi WebSockets vs SSE vs Polling ?".
-   */
-  public toggleExamMemo(): void {
-    this.isExamMemoExpanded = !this.isExamMemoExpanded;
-  }
-
-  /**
    * Déclenche une simulation d'état (`DOWN`, `DEGRADED`, `UP`) sur un microservice donné.
    */
   public simulateStatus(slug: MicroserviceSlug, status: ServiceStatus): void {
@@ -193,7 +150,10 @@ export class AppComponent implements OnInit, OnDestroy {
       return '00m 01s';
     }
     const startMs = new Date(downSinceIso).getTime();
-    const elapsedSeconds = Math.max(1, Math.floor((this.nowTimestampMs - startMs) / 1000));
+    const elapsedSeconds = Math.max(
+      1,
+      Math.floor((this.nowTimestampMs - startMs) / 1000)
+    );
     return this.formatSecondsToReadableDuration(elapsedSeconds);
   }
 
@@ -242,6 +202,9 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   public ngOnDestroy(): void {
-    this.subscriptions.unsubscribe();
+    if (this.clockSubscription) {
+      this.clockSubscription.unsubscribe();
+      this.clockSubscription = null;
+    }
   }
 }

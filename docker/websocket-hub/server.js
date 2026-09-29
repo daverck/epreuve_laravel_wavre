@@ -1,29 +1,12 @@
 /**
- * ============================================================================
- * VILLE DE WAVRE — Serveur WebSocket Temps Réel (RFC 6455 Natif)
- * ============================================================================
- * Ce serveur WebSocket (Port 6001) assure la diffusion instantanée (< 5 ms)
- * des événements émis par le backend Laravel (`MicroserviceStatusUpdated`)
- * vers tous les écrans de supervision (Wallboard Angular) connectés.
- *
- * POUR L'EXAMEN ORAL (Comparaison Polling vs SSE vs WebSockets) :
- * - Contrairement au Short Polling (qui génère N requêtes HTTP inutiles par minute)
- *   et au SSE (unidirectionnel HTTP), ce serveur maintient une connexion TCP
- *   persistante Full-Duplex (RFC 6455) permettant :
- *   1. De pousser immédiatement une alerte rouge dès qu'un microservice tombe (`DOWN`).
- *   2. De synchroniser instantanément plusieurs écrans (ex: l'écran mural TV et
- *      le poste de l'administrateur qui clique sur "Simuler Déconnexion").
+ * VILLE DE WAVRE — Serveur WebSocket Temps Réel (RFC 6455 Natif - Port 6001)
  */
-
 const http = require('http');
 const crypto = require('crypto');
 
 const PORT = parseInt(process.env.PORT || '6001', 10);
 const clients = new Set();
 
-/**
- * Encode une chaîne UTF-8 en trame WebSocket texte (RFC 6455 Opcode 0x81)
- */
 function encodeWebSocketFrame(payloadString) {
     const payload = Buffer.from(payloadString, 'utf8');
     const length = payload.length;
@@ -31,7 +14,7 @@ function encodeWebSocketFrame(payloadString) {
 
     if (length < 126) {
         header = Buffer.alloc(2);
-        header[0] = 0x81; // FIN + Text Frame
+        header[0] = 0x81;
         header[1] = length;
     } else if (length < 65536) {
         header = Buffer.alloc(4);
@@ -48,9 +31,6 @@ function encodeWebSocketFrame(payloadString) {
     return Buffer.concat([header, payload]);
 }
 
-/**
- * Diffuse un événement JSON à tous les clients WebSocket connectés
- */
 function broadcastToAll(eventObject) {
     const message = JSON.stringify({
         ...eventObject,
@@ -80,7 +60,6 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    // Endpoint appelé par Laravel (`MicroserviceStatusUpdated` Broadcast)
     if (req.method === 'POST' && req.url === '/broadcast') {
         let body = '';
         req.on('data', (chunk) => {
@@ -121,7 +100,6 @@ const server = http.createServer((req, res) => {
     res.end(JSON.stringify({ error: 'Not Found' }));
 });
 
-// Handshake HTTP Upgrade -> WebSocket (RFC 6455)
 server.on('upgrade', (req, socket) => {
     const key = req.headers['sec-websocket-key'];
     if (!key) {
@@ -145,7 +123,6 @@ server.on('upgrade', (req, socket) => {
     socket.write(headers.join('\r\n'));
     clients.add(socket);
 
-    // Envoi immédiat d'un événement de confirmation de connexion WebSocket au client Angular
     socket.write(encodeWebSocketFrame(JSON.stringify({
         event: 'ConnectionEstablished',
         channel: 'microservices-wallboard',

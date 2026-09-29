@@ -5,7 +5,7 @@
   Interface haute visibilité conçue pour l'équipe IT de la Ville de Wavre :
    1. Halo rouge pulsé sur tout le cadre de l'écran dès qu'un service est DOWN
    2. Bandeau d'alerte critique clignotant (@keyframes alertPulse) avec chronomètre
-   3. Sélecteur interactif Temps Réel (WebSocket ⚡ vs SSE 📡 vs Polling 🔄) + Mémo Oral
+   3. Indicateur d'état WebSocket Temps Réel (ws://localhost:6001 — Connecté / Latence < 5 ms)
    4. Grille des 5 microservices Docker (core, mailing, carto, voirie, salle)
    5. Journal chronologique des incidents en direct (recent_incidents)
   ============================================================================
@@ -52,7 +52,7 @@
   </section>
 
   <!-- ========================================================================
-       2. EN-TÊTE OFFICIEL NOC : VILLE DE WAVRE — SUPERVISION DES MICROSERVICES
+       2. EN-TÊTE OFFICIEL NOC : VILLE DE WAVRE + INDICATEUR WEBSOCKET TEMPS RÉEL
        ======================================================================== -->
   <header class="wallboard-header">
     <div class="brand-block">
@@ -62,11 +62,20 @@
       </div>
       <div class="brand-titles">
         <div class="official-overline">
-          ADMINISTRATION COMMUNALE DE WAVRE • ARCHITECTURE DOCKER &amp; LARAVEL 12
+          ADMINISTRATION COMMUNALE DE WAVRE • ARCHITECTURE DOCKER &amp; WEBSOCKETS TEMPS RÉEL
         </div>
         <h1 class="wallboard-main-title">
           VILLE DE WAVRE — SUPERVISION DES MICROSERVICES DOCKER
         </h1>
+
+        <!-- Indicateur d'état WebSocket Temps Réel épuré (ws://localhost:6001 — Connecté / Latence < 5 ms) -->
+        <div class="ws-status-bar">
+          <span class="ws-live-dot" [class.ws-live-connected]="wsState.wsConnected"></span>
+          <span class="ws-status-title">⚡ WebSocket Temps Réel :</span>
+          <code class="ws-endpoint mono">{{ wsState.wsEndpoint }}</code>
+          <span class="ws-badge-ok">{{ wsState.statusText }} ({{ wsState.lastEventLatencyMs }} ms)</span>
+          <span class="ws-events-counter mono">• {{ wsState.wsEventsCount }} événement(s) reçu(s)</span>
+        </div>
       </div>
     </div>
 
@@ -96,115 +105,14 @@
   </header>
 
   <!-- ========================================================================
-       3. SÉLECTEUR & COMPARATEUR PÉDAGOGIQUE TEMPS RÉEL
-          (WebSocket ⚡ vs SSE 📡 vs Polling 🔄 — Réponse Examen Écrit & Oral)
-       ======================================================================== -->
-  <section class="realtime-selector-panel">
-    <div class="realtime-toolbar">
-      <div class="protocol-switch-group">
-        <span class="selector-label">CANAL TEMPS RÉEL ACTIF :</span>
-
-        <button
-          type="button"
-          class="protocol-btn"
-          [class.active-ws]="protocolMetrics.activeMode === 'WEBSOCKET'"
-          (click)="selectTransportMode('WEBSOCKET')">
-          ⚡ WebSocket <span class="proto-sub">(Full-Duplex &lt; 10 ms)</span>
-        </button>
-
-        <button
-          type="button"
-          class="protocol-btn"
-          [class.active-sse]="protocolMetrics.activeMode === 'SSE'"
-          (click)="selectTransportMode('SSE')">
-          📡 SSE <span class="proto-sub">(EventSource HTTP Stream)</span>
-        </button>
-
-        <button
-          type="button"
-          class="protocol-btn"
-          [class.active-polling]="protocolMetrics.activeMode === 'POLLING'"
-          (click)="selectTransportMode('POLLING')">
-          🔄 Polling <span class="proto-sub">(HTTP GET / 2s)</span>
-        </button>
-      </div>
-
-      <!-- Métriques mesurées en direct sur le protocole sélectionné -->
-      <div class="protocol-live-telemetry">
-        <div class="telemetry-chip">
-          <span class="conn-dot" [class.conn-online]="protocolMetrics.connectionState === 'CONNECTE'"></span>
-          <span>État : <strong>{{ protocolMetrics.connectionState }}</strong></span>
-        </div>
-        <div class="telemetry-chip">
-          <span>Trames reçues : <strong class="mono">{{ protocolMetrics.eventsReceivedCount }}</strong></span>
-        </div>
-        <div class="telemetry-chip">
-          <span>Latence Protocole : <strong class="mono highlight-cyan">{{ protocolMetrics.lastProtocolLatencyMs }} ms</strong></span>
-        </div>
-        <div class="telemetry-chip endpoint-chip">
-          <code class="mono">{{ protocolMetrics.endpointDisplay }}</code>
-        </div>
-
-        <button
-          type="button"
-          class="btn-exam-memo"
-          (click)="toggleExamMemo()">
-          🎓 {{ isExamMemoExpanded ? 'Masquer' : 'Afficher' }} Mémo Examen Oral : Pourquoi WebSockets vs SSE vs Polling ?
-        </button>
-      </div>
-    </div>
-
-    <!-- Panneau dépliable : Mémo Examen Oral (WebSockets vs SSE vs Short Polling) -->
-    <div class="exam-memo-drawer" *ngIf="isExamMemoExpanded">
-      <div class="memo-header">
-        <h3>
-          🎓 Synthèse Architecturale (Examen Écrit &amp; Défense Orale) — Comparaison des 3 Protocoles Temps Réel
-        </h3>
-        <p>{{ protocolMetrics.statusDetail }}</p>
-      </div>
-
-      <div class="memo-table-wrapper">
-        <table class="memo-comparison-table">
-          <thead>
-            <tr>
-              <th>Protocole</th>
-              <th>Sens de Communication</th>
-              <th>Latence d'Alerte</th>
-              <th>Charge Réseau / Serveur</th>
-              <th>Reconnexion</th>
-              <th>Justification Ville de Wavre (5 Microservices)</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              *ngFor="let row of protocolComparisonRows"
-              [class.row-recommended]="row.isRecommended"
-              [class.row-currently-active]="protocolMetrics.activeMode === row.protocol">
-              <td>
-                <span class="proto-badge">{{ row.badge }}</span>
-                <div class="proto-title">{{ row.title }}</div>
-              </td>
-              <td>{{ row.direction }}</td>
-              <td class="mono">{{ row.averageLatency }}</td>
-              <td>{{ row.networkOverhead }}</td>
-              <td>{{ row.reconnectBehavior }}</td>
-              <td>{{ row.wavreVerdict }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </section>
-
-  <!-- ========================================================================
-       4. GRILLE PRINCIPALE DES 5 MICROSERVICES DOCKER (CORE, MAILING, CARTO, VOIRIE, SALLE)
+       3. GRILLE PRINCIPALE DES 5 MICROSERVICES DOCKER (CORE, MAILING, CARTO, VOIRIE, SALLE)
        ======================================================================== -->
   <main class="wallboard-main-grid">
     <section class="microservices-section">
       <div class="section-title-bar">
         <h2>ÉTAT EN TEMPS RÉEL DES 5 CONTENEURS DOCKER DE LA VILLE DE WAVRE</h2>
         <span class="section-subtitle">
-          Cliquez sur les boutons de simulation de n'importe quelle carte pour tester la détection immédiate des pannes
+          Cliquez sur les boutons de simulation de n'importe quelle carte pour tester l'alerte WebSocket immédiate (&lt; 5 ms)
         </span>
       </div>
 
@@ -322,7 +230,7 @@
     </section>
 
     <!-- ======================================================================
-         5. JOURNAL DES INCIDENTS EN DIRECT (`recent_incidents`)
+         4. JOURNAL DES INCIDENTS EN DIRECT (`recent_incidents`)
          ====================================================================== -->
     <aside class="incidents-sidebar">
       <div class="incidents-header">

@@ -53,9 +53,7 @@ Pour afficher une alerte visuelle **rapidement** lorsqu'un microservice se déco
    - *Analyse* : C'est la solution HTTP standard idéale pour un écran d'affichage **purement passif**, avec reconnexion automatique native dans le navigateur.
 3. **WebSockets (`ws://` RFC 6455 — Canal TCP Full-Duplex Bidirectionnel)** :
    - *Principe* : Connexion persistante **bidirectionnelle** à très faible latence ($< 5\text{ ms}$) entre le serveur (`wavre-ws-hub` piloté par l'événement Laravel `MicroserviceStatusUpdated`) et tous les écrans connectés.
-   - *Pourquoi ce choix dans notre architecture ?* : Notre application combine **supervision sur écran mural** ET **actions interactives de simulation** pouvant être déclenchées depuis un autre poste (ou un autre onglet). Dès qu'un opérateur clique sur *"Simuler Déconnexion"*, Laravel met à jour la base de données, pilote le conteneur Docker cible et diffuse un événement WebSocket : **l'alerte visuelle s'affiche en moins de 10 millisecondes sur tous les écrans connectés**.
-
-> 💡 **Bonus Pédagogique intégré à l'interface** : L'en-tête du Wallboard intègre un **sélecteur de protocole temps réel en direct (`WebSockets` ⚡ | `SSE EventSource` 📡 | `Short Polling` 🔄)** permettant de basculer à chaud entre les trois technologies et d'observer leur comportement respectif.
+   - *Pourquoi avoir retenu **exclusivement les WebSockets** dans notre implémentation ?* : Notre application combine **supervision sur écran mural** ET **actions interactives de simulation** pouvant être déclenchées depuis un autre poste (ou un autre onglet). Dès qu'un opérateur clique sur *"Simuler Déconnexion"*, Laravel met à jour la base de données, pilote le conteneur Docker cible et diffuse l'événement `MicroserviceStatusUpdated` via le serveur WebSocket (`ws://localhost:6001`) : **l'alerte visuelle s'affiche en moins de 5 millisecondes sur tous les écrans connectés**, avec une architecture unique, propre et sans redondance de protocoles.
 
 ---
 
@@ -99,7 +97,6 @@ Lors du démarrage, le conteneur `wavre-backend-api` exécute automatiquement :
 | 🖥️ **Wallboard de Monitoring (Angular)** | **[http://localhost:4200](http://localhost:4200)** | Écran principal de supervision temps réel + Boutons de simulation |
 | 🔌 **API REST Laravel (JSON)** | **[http://localhost:8000/api/microservices](http://localhost:8000/api/microservices)** | État JSON des 5 microservices et résumé global |
 | 📖 **Documentation Interactive Swagger UI** | **[http://localhost:8000/api/docs](http://localhost:8000/api/docs)** | Contrat OpenAPI 3.0.3 testable directement dans le navigateur |
-| 📡 **Flux Server-Sent Events (SSE)** | **[http://localhost:8000/api/microservices/stream](http://localhost:8000/api/microservices/stream)** | Flux temps réel HTTP `text/event-stream` |
 | ⚡ **Serveur WebSocket Temps Réel** | `ws://localhost:6001` | Serveur WebSocket RFC 6455 pour les alertes instantanées (`< 5 ms`) |
 | 🐳 **Sondes directes des 5 Microservices** | `http://localhost:8081/health` à `:8085/health` | `8081` (`core`), `8082` (`mailing`), `8083` (`carto`), `8084` (`voirie`), `8085` (`salle`) |
 
@@ -148,7 +145,7 @@ Le projet fournit **les deux méthodes** demandées dans l'énoncé :
   - Simulation de **Ralentissement (`DEGRADED`)** (injecte une latence élevée dans le conteneur Docker).
   - Simulation de **Reconnexion (`UP`)** (rétablit le conteneur en `HTTP 200`, lève l'alerte et calcule automatiquement la durée totale de la panne).
   - Boutons globaux : **"Tout rétablir (UP)"**, **"Simuler panne aléatoire (Chaos Test)"** et **"Sonder les conteneurs Docker (/ping)"**.
-- ✅ **Architecture Temps Réel Tri-Mode (`WebSockets` + `SSE` + `Short Polling`)** avec sélecteur interactif en direct sur le Wallboard.
+- ✅ **Diffusion Temps Réel 100 % WebSockets (`ws://localhost:6001`)** propulsée par l'événement Laravel `MicroserviceStatusUpdated` (`ShouldBroadcastNow`) pour une réactivité inférieure à `5 ms` sur l'écran mural.
 - ✅ **Journal d'Audit et d'Incidents Horodaté** (`service_logs`) affichant l'historique complet des déconnexions/reconnexions et les temps de coupure.
 - ✅ **Contrat OpenAPI 3.0.3 (`docs/openapi.yaml`)** et interface **Swagger UI** intégrée (`/api/docs`).
 - ✅ **Suite de tests automatisés PHPUnit** (`MicroserviceMonitoringTest`) et **Linters** (`Laravel Pint` PSR-12 + `ESLint`).

@@ -6,11 +6,9 @@ Il est conçu pour être développé et maintenu par deux agents spécialisés (
 ## Règles Impératives Communes
 1. **Explicabilité pour l'Examen Oral** :
    - Chaque classe, méthode et bloc complexe doit comporter des **commentaires pédagogiques en français** expliquant le *Pourquoi* (choix d'architecture) en plus du *Comment*.
-2. **Architecture Temps Réel (Lien avec l'Examen Écrit : Polling vs SSE vs WebSockets)** :
-   - Le projet implémente et démontre la maîtrise des **3 approches temps réel** :
-     1. **WebSockets (`ws://` Bidirectionnel)** : Utilisé pour diffuser instantanément (`< 10 ms`) l'événement `MicroserviceStatusUpdated` à tous les écrans connectés dès qu'une déconnexion ou reconnexion a lieu (idéal en environnement multi-écrans où un opérateur simule une panne pendant qu'un écran TV mural affiche le statut).
-     2. **Server-Sent Events (`SSE` — `GET /api/microservices/stream`)** : Flux HTTP unidirectionnel `text/event-stream` poussant les changements d'état du serveur vers le client (l'alternative HTTP native la plus légère pour un écran passif).
-     3. **Short Polling (`GET /api/microservices`)** : Fallback résilient garantissant la continuité de supervision même derrière un pare-feu bloquant les connexions persistantes.
+2. **Architecture Temps Réel : Choix Exclusif des WebSockets (`ws://`)** :
+   - Pour répondre au besoin d'afficher **une alerte visuelle rapidement** dès qu'un microservice se déconnecte, nous avons choisi **exclusivement les WebSockets (`ws://localhost:6001` RFC 6455)** (en écartant le Short Polling trop coûteux en requêtes HTTP et les SSE limités à de l'unidirectionnel).
+   - Dès qu'une déconnexion ou reconnexion a lieu, Laravel émet l'événement `MicroserviceStatusUpdated` (`ShouldBroadcastNow`) qui est poussé en moins de `5 ms` par WebSocket à tous les écrans connectés.
 3. **Les 5 Microservices Officiels de la Ville de Wavre** :
    - `core` : Sert l'interface client (Service critique — impacte l'ensemble du système s'il est `DOWN`)
    - `mailing` : Envoie les mails pour les différents processus

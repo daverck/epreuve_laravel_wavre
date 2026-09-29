@@ -13,7 +13,7 @@ use Tests\TestCase;
  * du backend de supervision des 5 microservices de la Ville de Wavre :
  * - API REST de supervision (`/api/microservices`)
  * - Simulation de pannes (`DOWN`, `DEGRADED`) et reconnexion (`UP`) avec calcul du downtime
- * - Diffusion temps réel WebSocket (`MicroserviceStatusUpdated`) et Server-Sent Events (`/api/microservices/stream`)
+ * - Diffusion temps réel via WebSockets (`MicroserviceStatusUpdated` sur `microservices-wallboard`)
  * - Contrat OpenAPI 3.0 & Swagger UI (`/api/openapi.yaml`, `/api/docs`)
  */
 class MicroserviceMonitoringTest extends TestCase
@@ -53,12 +53,10 @@ class MicroserviceMonitoringTest extends TestCase
 
     /**
      * Test 2 : Vérifie que la simulation d'une déconnexion (`DOWN`) sur un microservice
-     * met à jour la base de données, crée un `ServiceLog`, active l'alerte et émet l'événement WebSocket.
+     * met à jour la base de données, crée un `ServiceLog` et active l'alerte sur le Wallboard.
      */
     public function test_it_simulates_microservice_disconnection_creates_log_and_triggers_active_alert(): void
     {
-        Event::fake([MicroserviceStatusUpdated::class]);
-
         $response = $this->postJson('/api/microservices/voirie/simulate', [
             'status' => 'DOWN',
             'reason' => 'Simulation manuelle de panne du service Voirie',
@@ -86,11 +84,6 @@ class MicroserviceMonitoringTest extends TestCase
             'trigger_source' => 'SIMULATION_UI',
             'message' => 'Simulation manuelle de panne du service Voirie',
         ]);
-
-        Event::assertDispatched(MicroserviceStatusUpdated::class, function (MicroserviceStatusUpdated $event): bool {
-            return $event->microservice->slug === 'voirie'
-                && $event->microservice->status === 'DOWN';
-        });
     }
 
     /**
@@ -188,22 +181,42 @@ class MicroserviceMonitoringTest extends TestCase
     }
 
     /**
-     * Test 7 : Vérifie que l'endpoint Server-Sent Events (`GET /api/microservices/stream`)
-     * diffuse un flux `text/event-stream` valide contenant l'état JSON du Wallboard.
+     * Test 7 : Vérifie que l'événement WebSocket `MicroserviceStatusUpdated` (`ShouldBroadcastNow`)
+     * est déclenché sur le canal `microservices-wallboard` lors d'une simulation de déconnexion et reconnexion.
      */
-    public function test_it_streams_real_time_status_via_server_sent_events_sse_endpoint(): void
+    public function test_it_dispatches_websocket_broadcast_event_on_disconnection_and_reconnection(): void
     {
-        $response = $this->get('/api/microservices/stream?iterations=1');
+        Event::fake([MicroserviceStatusUpdated::class]);
 
-        $response->assertOk();
-        $this->assertStringContainsString(
-            'text/event-stream',
-            (string) $response->headers->get('Content-Type')
-        );
+        // Simulation d'une déconnexion sur le microservice `salle`
+        $this->postJson('/api/microservices/salle/simulate', [
+            'status' => 'DOWN',
+            'reason' => 'Coupure simulée du service Salle',
+        ])->assertOk();
 
-        $streamedContent = $response->streamedContent();
-        $this->assertStringContainsString('event: wallboard.update', $streamedContent);
-        $this->assertStringContainsString('"total_services":5', $streamedContent);
+        Event::assertDispatched(MicroserviceStatusUpdated::class, function (MicroserviceStatusUpdated $event): bool {
+            $channels = collect($event->broadcastOn())->map(fn ($channel) => $channel->name)->all();
+            $payload = $event->broadcastWith();
+
+            return $event->microservice->slug === 'salle'
+                && $event->microservice->status === 'DOWN'
+                && in_array('microservices-wallboard', $channels, true)
+                && $event->broadcastAs() === 'microservice.status.updated'
+                && ($payload['dashboard']['summary']['down_count'] ?? 0) === 1;
+        });
+
+        // Simulation d'une reconnexion sur le microservice `salle`
+        $this->postJson('/api/microservices/salle/simulate', [
+            'status' => 'UP',
+            'reason' => 'Reconnexion du service Salle',
+        ])->assertOk();
+
+        Event::assertDispatched(MicroserviceStatusUpdated::class, function (MicroserviceStatusUpdated $event): bool {
+            return $event->microservice->slug === 'salle'
+                && $event->microservice->status === 'UP'
+                && $event->serviceLog->previous_status === 'DOWN'
+                && $event->serviceLog->new_status === 'UP';
+        });
     }
 
     /**

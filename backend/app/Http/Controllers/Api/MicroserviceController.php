@@ -10,12 +10,11 @@ use App\Services\HealthMonitorService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Contrôleur API principal gérant la supervision des 5 microservices de la Ville de Wavre,
- * la simulation de pannes (Chaos Engineering), le flux temps réel SSE (Server-Sent Events)
- * et la documentation interactive OpenAPI 3.0 / Swagger UI.
+ * la simulation de pannes (Chaos Engineering), la diffusion temps réel via WebSockets
+ * (`MicroserviceStatusUpdated`) et la documentation interactive OpenAPI 3.0 / Swagger UI.
  */
 class MicroserviceController extends Controller
 {
@@ -26,7 +25,7 @@ class MicroserviceController extends Controller
 
     /**
      * GET /api/microservices
-     * Retourne l'état temps réel des 5 microservices, le résumé global d'alerte
+     * Retourne l'état initial des 5 microservices, le résumé global d'alerte
      * et les 20 derniers incidents pour l'écran mural (Wallboard Angular).
      */
     public function index(Request $request): JsonResponse
@@ -64,7 +63,8 @@ class MicroserviceController extends Controller
     /**
      * POST /api/microservices/{slug}/simulate
      * Simule la déconnexion (`DOWN`), le ralentissement (`DEGRADED`) ou la reconnexion (`UP`)
-     * d'un microservice spécifique et diffuse l'alerte en temps réel (WebSocket + SSE).
+     * d'un microservice spécifique et diffuse instantanément l'alerte en temps réel
+     * via WebSocket (`MicroserviceStatusUpdated`).
      */
     public function simulate(SimulateMicroserviceRequest $request, string $slug): JsonResponse
     {
@@ -98,7 +98,7 @@ class MicroserviceController extends Controller
     /**
      * POST /api/microservices/simulate-all
      * Applique un statut global (`UP`, `DOWN` ou `DEGRADED`) aux 5 microservices en un seul clic
-     * (ex: rétablissement général de tous les conteneurs depuis le Wallboard).
+     * et diffuse chaque changement d'état en temps réel via WebSocket.
      */
     public function simulateAll(Request $request): JsonResponse
     {
@@ -155,45 +155,6 @@ class MicroserviceController extends Controller
 
         return response()->json([
             'data' => $incidents->values()->toArray(),
-        ]);
-    }
-
-    /**
-     * GET /api/microservices/stream
-     * Endpoint Server-Sent Events (SSE) diffusant l'état JSON des microservices en flux continu
-     * (`Content-Type: text/event-stream`). Permet au Wallboard Angular de recevoir les mises
-     * à jour en temps réel et de comparer WebSockets (RFC 6455) vs SSE vs HTTP Polling.
-     */
-    public function stream(Request $request): StreamedResponse
-    {
-        $iterations = (int) $request->query('iterations', 1);
-        $iterations = max(1, min(5, $iterations));
-
-        return response()->stream(function () use ($iterations): void {
-            for ($i = 0; $i < $iterations; $i++) {
-                $payload = $this->monitorService->getDashboardPayload(false);
-                $json = json_encode($payload, JSON_UNESCAPED_UNICODE);
-
-                echo 'id: '.uniqid('sse-', true)."\n";
-                echo "event: wallboard.update\n";
-                echo "retry: 2000\n";
-                echo "data: {$json}\n\n";
-
-                if (ob_get_level() > 0) {
-                    @ob_flush();
-                }
-                flush();
-
-                if ($i + 1 < $iterations && ! app()->runningUnitTests()) {
-                    sleep(1);
-                }
-            }
-        }, 200, [
-            'Content-Type' => 'text/event-stream; charset=UTF-8',
-            'Cache-Control' => 'no-cache, no-transform',
-            'Connection' => 'keep-alive',
-            'X-Accel-Buffering' => 'no',
-            'Access-Control-Allow-Origin' => '*',
         ]);
     }
 
@@ -256,7 +217,7 @@ class MicroserviceController extends Controller
 <body>
     <div class="wavre-banner">
         <h1>Ville de Wavre — Contrat OpenAPI 3.0 (Supervision des 5 Microservices)</h1>
-        <span>Laravel 11 REST + WebSockets + SSE</span>
+        <span>Laravel 11 REST + WebSockets Temps Réel</span>
     </div>
     <div id="swagger-ui"></div>
     <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>

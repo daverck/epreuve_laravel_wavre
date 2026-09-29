@@ -5,10 +5,10 @@ use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------
-| Routes API REST & Temps Réel — Supervision Microservices (Ville de Wavre)
+| Routes API REST & Temps Réel WebSocket — Supervision Microservices (Ville de Wavre)
 |--------------------------------------------------------------------------
 | Préfixées automatiquement par `/api` via `bootstrap/app.php`.
-| Alimente l'écran mural (Wallboard Angular) en REST, SSE et WebSockets.
+| Alimente l'écran mural (Wallboard Angular) via API REST et diffusion WebSocket.
 */
 
 // Documentation interactive OpenAPI 3.0.3 / Swagger UI
@@ -25,10 +25,6 @@ Route::get('/incidents', [MicroserviceController::class, 'incidents'])
 Route::prefix('microservices')->group(function (): void {
     Route::get('/', [MicroserviceController::class, 'index'])
         ->name('api.microservices.index');
-
-    // Flux temps réel Server-Sent Events (SSE)
-    Route::get('/stream', [MicroserviceController::class, 'stream'])
-        ->name('api.microservices.stream');
 
     // Actions globales (Rétablissement général / Sonde Docker active)
     Route::post('/simulate-all', [MicroserviceController::class, 'simulateAll'])

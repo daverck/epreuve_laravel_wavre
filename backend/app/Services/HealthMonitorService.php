@@ -6,13 +6,12 @@ use App\Events\MicroserviceStatusUpdated;
 use App\Models\HealthCheck;
 use App\Models\Microservice;
 use App\Models\ServiceLog;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
 /**
  * Service métier centralisant la supervision des 5 microservices de la Ville de Wavre,
  * la simulation de pannes (Chaos Engineering), l'interrogation des conteneurs Docker
- * et la diffusion temps réel hybride (WebSockets + Server-Sent Events).
+ * et la diffusion temps réel via WebSockets (`MicroserviceStatusUpdated`).
  */
 class HealthMonitorService
 {
@@ -80,7 +79,7 @@ class HealthMonitorService
     /**
      * Simule la déconnexion (`DOWN`), le ralentissement (`DEGRADED`) ou la reconnexion (`UP`)
      * d'un microservice, calcule la durée d'indisponibilité en cas de rétablissement,
-     * pilote le conteneur Docker correspondant et diffuse l'alerte en temps réel (WebSocket + SSE).
+     * pilote le conteneur Docker correspondant et diffuse l'alerte en temps réel via WebSocket.
      *
      * @return array{microservice: Microservice, log: ServiceLog, dashboard: array<string, mixed>}
      */
@@ -157,10 +156,7 @@ class HealthMonitorService
         $service->refresh();
         $dashboard = $this->getDashboardPayload(false);
 
-        // Mise en cache pour le flux Server-Sent Events (SSE)
-        Cache::put('wallboard_latest_payload', $dashboard, now()->addMinutes(10));
-
-        // Diffusion de l'événement Laravel et push vers le Hub WebSocket (port 6001)
+        // Diffusion de l'événement Broadcast Laravel et push vers le Hub WebSocket (port 6001)
         MicroserviceStatusUpdated::dispatch($service, $log, $dashboard);
         $this->broadcastToWebsocketHub($service, $log, $dashboard);
 

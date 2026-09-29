@@ -3,8 +3,8 @@
  * VILLE DE WAVRE — MODÈLES DE DONNÉES DU WALLBOARD DE SUPERVISION (TYPESCRIPT)
  * ============================================================================
  * Ce fichier définit les contrats de données (Interfaces & Types stricts)
- * partagés entre le Backend Laravel 12 (API REST / SSE / WebSockets) et
- * le Frontend Angular 18.
+ * partagés entre le Backend Laravel 12 (API REST & Diffusion WebSocket) et
+ * le Frontend Angular 18 (Architecture réactive à base de Signals).
  *
  * Architecture supervisée : 5 Microservices Dockerisés :
  *  1. `core`    (Critique) : Interface citoyenne principale & orchestration
@@ -29,28 +29,10 @@ export type MicroserviceSlug = 'core' | 'mailing' | 'carto' | 'voirie' | 'salle'
 export type ServiceStatus = 'UP' | 'DEGRADED' | 'DOWN';
 
 /**
- * Les 3 modes de transport Temps Réel implémentés pour répondre à la question
- * théorique et pratique de l'examen écrit de la Ville de Wavre :
- * - `WEBSOCKET` : Full-Duplex TCP (`ws://localhost:6001`) — Latence < 10 ms (Recommandé)
- * - `SSE`       : Server-Sent Events (`text/event-stream`) — Push HTTP unidirectionnel
- * - `POLLING`   : Short Polling HTTP (`GET /api/microservices` toutes les 2s)
- */
-export type RealtimeTransportMode = 'WEBSOCKET' | 'SSE' | 'POLLING';
-
-/**
- * État technique du canal de transport temps réel actif.
- */
-export type TransportConnectionState =
-  | 'CONNECTE'
-  | 'CONNEXION_EN_COURS'
-  | 'REPLI_HYBRIDE_ACTIF'
-  | 'DECONNECTE';
-
-/**
  * Représentation complète d'un microservice affiché sur le Wallboard TV.
  */
 export interface MicroserviceItem {
-  /** Identifiant numérique ou UUID en base de données */
+  /** Identifiant numérique en base de données */
   id: number;
   /** Identifiant métier court (`core`, `mailing`, `carto`, `voirie`, `salle`) */
   slug: MicroserviceSlug;
@@ -100,7 +82,7 @@ export interface IncidentLogItem {
   previous_status: ServiceStatus;
   /** Nouveau statut après la transition */
   new_status: ServiceStatus;
-  /** Origine du changement d'état (`SIMULATION_UI` ou `DOCKER_PROBE`) */
+  /** Origine du changement d'état (`SIMULATION_UI`, `DOCKER_PROBE`, `SYSTEM_RECOVERY`) */
   source: 'SIMULATION_UI' | 'DOCKER_PROBE' | 'SYSTEM_RECOVERY';
   /** Message explicatif détaillant la cause ou l'action opérateur */
   reason: string;
@@ -111,48 +93,41 @@ export interface IncidentLogItem {
 }
 
 /**
- * Métriques en temps réel du protocole de communication actif.
- * Affichées dans le bandeau pédagogique en haut du Wallboard pour comparer
- * empiriquement WebSocket vs SSE vs Short Polling devant le jury.
+ * État de connexion WebSocket Temps Réel (`ws://localhost:6001`) affiché dans
+ * l'en-tête du Wallboard NOC de la Ville de Wavre.
  */
-export interface RealtimeProtocolMetrics {
-  /** Mode de transport actuellement sélectionné par l'opérateur */
-  activeMode: RealtimeTransportMode;
-  /** État de la connexion au serveur temps réel */
-  connectionState: TransportConnectionState;
-  /** Nombre total de trames / événements reçus dans le mode actif */
-  eventsReceivedCount: number;
-  /** Latence mesurée du dernier message temps réel (en ms) */
-  lastProtocolLatencyMs: number;
-  /** Horodatage ISO de la dernière trame reçue */
-  lastEventTimestamp: string;
-  /** URL du point de terminaison réseau utilisé par le protocole actif */
-  endpointDisplay: string;
-  /** Description courte du comportement technique en cours */
-  statusDetail: string;
+export interface WebSocketConnectionState {
+  /** Indique si le canal WebSocket Full-Duplex est actif et connecté */
+  wsConnected: boolean;
+  /** Point de terminaison WebSocket (ex: `ws://localhost:6001`) */
+  wsEndpoint: string;
+  /** Latence mesurée du dernier événement WebSocket reçu (en ms, typiquement < 5 ms) */
+  lastEventLatencyMs: number;
+  /** Nombre total d'événements `MicroserviceStatusUpdated` reçus via WebSocket */
+  wsEventsCount: number;
+  /** Horodatage ISO de la dernière trame WebSocket reçue */
+  lastEventAt: string;
+  /** Libellé lisible de l'état du socket (ex: `Connecté (Full-Duplex < 5 ms)`) */
+  statusText: string;
 }
 
 /**
- * Structure comparative pour le panneau pédagogique "Mémo Examen Oral :
- * Pourquoi WebSockets vs SSE vs Polling ?".
+ * État global réactif du Wallboard (stocké dans un Signal Angular `dashboardState`).
  */
-export interface ProtocolComparisonRow {
-  protocol: RealtimeTransportMode;
-  badge: string;
-  title: string;
-  direction: string;
-  averageLatency: string;
-  networkOverhead: string;
-  reconnectBehavior: string;
-  wavreVerdict: string;
-  isRecommended: boolean;
+export interface DashboardState {
+  /** Les 5 microservices supervisés de la Ville de Wavre */
+  services: MicroserviceItem[];
+  /** Le fil chronologique des incidents en direct */
+  recentIncidents: IncidentLogItem[];
+  /** L'état de la connexion WebSocket Temps Réel */
+  wsState: WebSocketConnectionState;
 }
 
 /**
  * Charge utile (Payload) diffusée par l'événement Laravel `MicroserviceStatusUpdated`
- * sur le canal WebSocket (`ws://localhost:6001`) ou le flux SSE (`/api/microservices/stream`).
+ * sur le canal WebSocket (`ws://localhost:6001`).
  */
-export interface RealtimeBroadcastPayload {
+export interface WebSocketBroadcastPayload {
   event?: string;
   service?: Partial<MicroserviceItem> & { slug?: MicroserviceSlug };
   services?: MicroserviceItem[];

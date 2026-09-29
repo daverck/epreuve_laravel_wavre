@@ -1,0 +1,75 @@
+openapi: 3.0.3
+info:
+  title: API de Monitoring des Microservices — Ville de Wavre
+  version: 1.0.0
+  description: |
+    Contrat OpenAPI 3.0.3 pour la supervision temps réel (WebSockets RFC 6455) des 5 microservices Docker de la Ville de Wavre (`core`, `mailing`, `carto`, `voirie`, `salle`).
+servers:
+  - url: http://localhost:8000/api
+    description: Serveur API Laravel (Docker)
+paths:
+  /microservices:
+    get:
+      summary: Liste l'état temps réel des 5 microservices et le résumé global d'alerte
+      responses:
+        '200':
+          description: État complet des microservices
+  /microservices/{slug}:
+    get:
+      summary: Récupère les détails d'un microservice et son historique récent
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [core, mailing, carto, voirie, salle]
+      responses:
+        '200':
+          description: Détails du microservice
+  /microservices/{slug}/simulate:
+    post:
+      summary: Simule la déconnexion (DOWN), la dégradation (DEGRADED) ou la reconnexion (UP) et diffuse l'événement par WebSocket
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [core, mailing, carto, voirie, salle]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [UP, DOWN, DEGRADED]
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Simulation appliquée et diffusée par WebSocket
+        '422':
+          description: Statut invalide
+  /microservices/simulate-all:
+    post:
+      summary: Rétablit tous les microservices (UP) ou applique un scénario global
+      responses:
+        '200':
+          description: Tous les services ont été mis à jour
+  /microservices/ping:
+    post:
+      summary: Exécute une sonde HTTP (/health) immédiate vers les 5 conteneurs Docker
+      responses:
+        '200':
+          description: Résultat des sondes Docker
+  /incidents:
+    get:
+      summary: Retourne le journal horodaté des déconnexions et reconnexions
+      responses:
+        '200':
+          description: Liste des incidents
