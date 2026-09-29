@@ -204,7 +204,7 @@
                 class="btn-sim btn-sim-down"
                 [disabled]="service.status === 'DOWN'"
                 (click)="simulateStatus(service.slug, 'DOWN')">
-                ðŸ”´ Simuler DÃ©connexion (DOWN)
+                Simuler DÃ©connexion (DOWN)
               </button>
 
               <button
@@ -212,7 +212,7 @@
                 class="btn-sim btn-sim-degraded"
                 [disabled]="service.status === 'DEGRADED'"
                 (click)="simulateStatus(service.slug, 'DEGRADED')">
-                ðŸŸ  Simuler Ralentissement (DEGRADED)
+                Simuler Ralentissement (DEGRADED)
               </button>
 
               <button
@@ -220,7 +220,7 @@
                 class="btn-sim btn-sim-up"
                 [disabled]="service.status === 'UP'"
                 (click)="simulateStatus(service.slug, 'UP')">
-                ðŸŸ¢ Simuler Reconnexion (UP)
+                Simuler Reconnexion (UP)
               </button>
             </div>
           </div>
@@ -233,7 +233,7 @@
          ====================================================================== -->
     <aside class="incidents-sidebar">
       <div class="incidents-header">
-        <h2>ðŸ“‹ JOURNAL DES INCIDENTS EN DIRECT</h2>
+        <h2>JOURNAL DES INCIDENTS EN DIRECT</h2>
         <span class="incidents-count mono">{{ recentIncidents.length }} Ã©vÃ©nement(s)</span>
       </div>
 

@@ -197,7 +197,7 @@ class HealthMonitorService
                 $host = sprintf('ms-%s', $service->slug);
                 $errno = 0;
                 $errstr = '';
-                $socket = @fsockopen($host, (int) $service->port, $errno, $errstr, 0.4);
+                $socket = @fsockopen($host, (int) $service->port, $errno, $errstr, 0.15);
 
                 if ($socket === false) {
                     // Conteneur Docker réellement arrêté (ex: `docker stop wavre-ms-voirie`)
@@ -206,39 +206,20 @@ class HealthMonitorService
                     $latencyMs = 0;
                 } else {
                     fclose($socket);
-                    $latencyMs = max(1, (int) round((microtime(true) - $startTime) * 1000));
+                    $tcpLatencyMs = max(2, (int) round((microtime(true) - $startTime) * 1000));
 
-                    try {
-                        $response = Http::timeout(0.4)->get($service->health_url);
-                        $latencyMs = max(1, (int) round((microtime(true) - $startTime) * 1000));
-                        $httpStatusCode = $response->status();
-
-                        if ($response->successful()) {
-                            $bodyStatus = strtoupper((string) $response->json('status', 'UP'));
-                            $containerStatus = in_array($bodyStatus, ['UP', 'DOWN', 'DEGRADED'], true)
-                                ? $bodyStatus
-                                : 'UP';
-
-                            if ($service->is_simulated_down) {
-                                // Conserve la simulation manuelle déclenchée depuis le Wallboard UI
-                                $detectedStatus = $service->status;
-                                $httpStatusCode = $service->status === 'DOWN' ? 503 : 200;
-                                $latencyMs = $service->status === 'DOWN'
-                                    ? 0
-                                    : ($service->status === 'DEGRADED' ? 460 : $latencyMs);
-                            } else {
-                                // Rétablissement automatique (ex: après `docker start`) ou état du conteneur
-                                $detectedStatus = $containerStatus;
-                            }
-                        } else {
-                            $detectedStatus = 'DOWN';
-                            $httpStatusCode = 503;
-                            $latencyMs = 0;
-                        }
-                    } catch (\Throwable) {
-                        $detectedStatus = 'DOWN';
-                        $httpStatusCode = 503;
-                        $latencyMs = 0;
+                    if ($service->is_simulated_down) {
+                        // Conserve strictement la simulation manuelle déclenchée depuis le Wallboard UI (DEGRADED ou DOWN)
+                        $detectedStatus = $service->status;
+                        $httpStatusCode = $service->status === 'DOWN' ? 503 : 200;
+                        $latencyMs = $service->status === 'DOWN'
+                            ? 0
+                            : ($service->status === 'DEGRADED' ? 460 : $tcpLatencyMs);
+                    } else {
+                        // Aucun verrou de simulation UI actif et conteneur joignable : statut UP
+                        $detectedStatus = 'UP';
+                        $httpStatusCode = 200;
+                        $latencyMs = $tcpLatencyMs;
                     }
                 }
             }
@@ -318,11 +299,20 @@ class HealthMonitorService
             return;
         }
 
+        $host = sprintf('ms-%s', $service->slug);
+        $errno = 0;
+        $errstr = '';
+        $socket = @fsockopen($host, (int) $service->port, $errno, $errstr, 0.15);
+        if ($socket === false) {
+            return;
+        }
+        fclose($socket);
+
         $simulateUrl = preg_replace('#/health$#', '/simulate', $service->health_url)
             ?: sprintf('http://ms-%s:%d/simulate', $service->slug, $service->port);
 
         try {
-            Http::timeout(0.5)->post($simulateUrl, [
+            Http::connectTimeout(1)->timeout(1)->post($simulateUrl, [
                 'status' => $newStatus,
             ]);
         } catch (\Throwable) {

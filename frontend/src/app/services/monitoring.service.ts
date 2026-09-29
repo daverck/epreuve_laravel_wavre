@@ -169,11 +169,28 @@ export class RealtimeMonitoringService implements OnDestroy {
   /** Identifiant du timer `setInterval` de scrutation toutes les 2 secondes */
   private pollingIntervalId: ReturnType<typeof setInterval> | null = null;
 
+  /**
+   * Compteur de version incrémenté à chaque action manuelle (clic sur UP / DEGRADED / DOWN).
+   * Permet d'ignorer toute réponse HTTP de polling (`GET ?probe=true`) partie *avant* le clic
+   * mais arrivée *après*, évitant tout clignotement ou retour temporaire à l'ancien statut.
+   */
+  private mutationVersion = 0;
+
   constructor() {
-    // 1. Chargement initial immÃ©diat au dÃ©marrage
+    // 1. Chargement initial immédiat au démarrage
     this.fetchDashboard();
 
-    // 2. Scrutation pÃ©riodique Short Polling HTTP REST toutes les 2 secondes (2000 ms)
+    // 2. Scrutation périodique Short Polling HTTP REST toutes les 2 secondes (2000 ms)
+    this.restartPollingTimer();
+  }
+
+  /**
+   * (Ré)initialise le timer de Short Polling à 2 secondes pleines après une action.
+   */
+  private restartPollingTimer(): void {
+    if (this.pollingIntervalId) {
+      clearInterval(this.pollingIntervalId);
+    }
     this.pollingIntervalId = setInterval(() => {
       this.fetchDashboard();
     }, 2000);
@@ -181,15 +198,21 @@ export class RealtimeMonitoringService implements OnDestroy {
 
   /**
    * Interroge l'endpoint `GET http://localhost:8000/api/microservices?probe=true`
-   * et met Ã  jour le Signal `dashboardState` (`services`, `recentIncidents`, `pollingState`).
+   * et met à jour le Signal `dashboardState` (`services`, `recentIncidents`, `pollingState`).
    */
   public fetchDashboard(): void {
     const startedAt = performance.now();
+    const versionAtRequestStart = this.mutationVersion;
 
     this.http
       .get<unknown>(`${this.apiBaseUrl}?probe=true`)
       .pipe(
         tap((response: unknown) => {
+          // Si l'utilisateur a cliqué sur un bouton pendant que cette requête GET était en vol,
+          // on ignore cette réponse obsolète pour ne jamais écraser le nouvel état.
+          if (versionAtRequestStart !== this.mutationVersion) {
+            return;
+          }
           const measuredLatencyMs = Math.max(
             4,
             Math.round(performance.now() - startedAt)
@@ -197,8 +220,11 @@ export class RealtimeMonitoringService implements OnDestroy {
           this.applyDashboardPayload(response, measuredLatencyMs);
         }),
         catchError(() => {
-          // RÃ©silience si le serveur backend est temporairement indisponible :
-          // incrÃ©mente le compteur de sonde tout en conservant l'Ã©tat local.
+          if (versionAtRequestStart !== this.mutationVersion) {
+            return of(null);
+          }
+          // Résilience si le serveur backend est temporairement indisponible :
+          // incrémente le compteur de sonde tout en conservant l'état local.
           const current = this.dashboardState();
           this.dashboardState.set({
             ...current,
@@ -217,15 +243,20 @@ export class RealtimeMonitoringService implements OnDestroy {
 
   /**
    * ==========================================================================
-   * SIMULATION DE DÃ‰CONNEXION / RALENTISSEMENT / RECONNEXION (EXIGENCE Ã‰NONCÃ‰)
+   * SIMULATION DE DÉCONNEXION / RALENTISSEMENT / RECONNEXION (EXIGENCE ÉNONCÉ)
    * ==========================================================================
-   * Applique immÃ©diatement le changement d'Ã©tat et appelle
+   * Applique immédiatement le changement d'état et appelle
    * `POST http://localhost:8000/api/microservices/{slug}/simulate`.
    */
   public simulateServiceStatus(
     slug: MicroserviceSlug,
     targetStatus: ServiceStatus
   ): void {
+    // Incrémente la version de mutation et décale le prochain poll à +2s
+    this.mutationVersion++;
+    const currentMutationVersion = this.mutationVersion;
+    this.restartPollingTimer();
+
     const nowIso = new Date().toISOString();
     const current = this.dashboardState();
     const targetService = current.services.find((item) => item.slug === slug);
@@ -239,10 +270,10 @@ export class RealtimeMonitoringService implements OnDestroy {
       targetStatus === 'DOWN'
         ? 0
         : targetStatus === 'DEGRADED'
-          ? 485
-          : Math.floor(Math.random() * 10) + 10;
+          ? 460
+          : 14;
 
-    // Calcul de la durÃ©e exacte de la panne lors du retour Ã  UP
+    // Calcul de la durée exacte de la panne lors du retour à UP
     let outageDurationSeconds: number | null = null;
     if (previousStatus === 'DOWN' && targetStatus !== 'DOWN' && targetService.down_since) {
       const downStartMs = new Date(targetService.down_since).getTime();
@@ -269,10 +300,10 @@ export class RealtimeMonitoringService implements OnDestroy {
 
     const reasonText =
       targetStatus === 'DOWN'
-        ? `Simulation manuelle d'arrÃªt brutal du conteneur Docker (${targetService.container_name} injoignable sur le port :${targetService.port}).`
+        ? `Simulation manuelle d'arrêt brutal du conteneur Docker (${targetService.container_name} injoignable sur le port :${targetService.port}).`
         : targetStatus === 'DEGRADED'
-          ? `Simulation de saturation CPU / latence rÃ©seau Ã©levÃ©e (${simulatedLatency} ms) sur ${targetService.container_name}.`
-          : `RÃ©tablissement et reconnexion du conteneur ${targetService.container_name} (HealthCheck HTTP 200 OK en ${simulatedLatency} ms).`;
+          ? `Simulation de saturation CPU / latence réseau élevée (${simulatedLatency} ms) sur ${targetService.container_name}.`
+          : `Rétablissement et reconnexion du conteneur ${targetService.container_name} (HealthCheck HTTP 200 OK en ${simulatedLatency} ms).`;
 
     const newIncident: IncidentLogItem = {
       id: `sim-${Date.now()}-${slug}`,
@@ -307,6 +338,9 @@ export class RealtimeMonitoringService implements OnDestroy {
       })
       .pipe(
         tap((response: unknown) => {
+          if (currentMutationVersion !== this.mutationVersion) {
+            return;
+          }
           const latencyMs = Math.max(4, Math.round(performance.now() - requestStart));
           this.applyDashboardPayload(response, latencyMs);
         }),
@@ -317,10 +351,14 @@ export class RealtimeMonitoringService implements OnDestroy {
 
   /**
    * Bouton d'urgence du bandeau critique :
-   * "RÃ©tablir tous les services immÃ©diatement"
-   * Remet instantanÃ©ment tous les conteneurs `DOWN` ou `DEGRADED` Ã  l'Ã©tat `UP`.
+   * "Rétablir tous les services immédiatement"
+   * Remet instantanément tous les conteneurs `DOWN` ou `DEGRADED` à l'état `UP`.
    */
   public recoverAllServices(): void {
+    this.mutationVersion++;
+    const currentMutationVersion = this.mutationVersion;
+    this.restartPollingTimer();
+
     const nowIso = new Date().toISOString();
     const current = this.dashboardState();
     const newIncidents: IncidentLogItem[] = [];
@@ -338,7 +376,7 @@ export class RealtimeMonitoringService implements OnDestroy {
         );
       }
 
-      const healthyLatency = Math.floor(Math.random() * 9) + 11;
+      const healthyLatency = 14;
 
       newIncidents.push({
         id: `rec-${Date.now()}-${service.slug}`,
@@ -348,19 +386,10 @@ export class RealtimeMonitoringService implements OnDestroy {
         previous_status: service.status,
         new_status: 'UP',
         source: 'SYSTEM_RECOVERY',
-        reason: `RÃ©tablissement global d'urgence dÃ©clenchÃ© depuis le Wallboard NOC (${service.container_name} de nouveau opÃ©rationnel).`,
+        reason: `Rétablissement global d'urgence déclenché depuis le Wallboard NOC (${service.container_name} de nouveau opérationnel).`,
         occurred_at: nowIso,
         duration_seconds: durationSec,
       });
-
-      this.http
-        .post<unknown>(`${this.apiBaseUrl}/${service.slug}/simulate`, {
-          status: 'UP',
-          latency_ms: healthyLatency,
-          reason: 'RÃ©tablissement global depuis le Wallboard NOC',
-        })
-        .pipe(catchError(() => of(null)))
-        .subscribe();
 
       return {
         ...service,
@@ -388,9 +417,15 @@ export class RealtimeMonitoringService implements OnDestroy {
 
     const requestStart = performance.now();
     this.http
-      .post<unknown>(`${this.apiBaseUrl}/recover-all`, {})
+      .post<unknown>(`${this.apiBaseUrl}/simulate-all`, {
+        status: 'UP',
+        reason: 'Rétablissement global depuis le Wallboard NOC',
+      })
       .pipe(
         tap((response: unknown) => {
+          if (currentMutationVersion !== this.mutationVersion) {
+            return;
+          }
           const latencyMs = Math.max(4, Math.round(performance.now() - requestStart));
           this.applyDashboardPayload(response, latencyMs);
         }),
