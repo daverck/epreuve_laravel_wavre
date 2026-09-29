@@ -184,7 +184,17 @@ class HealthMonitorService
 
             if (! app()->runningUnitTests()) {
                 try {
-                    $response = Http::timeout(0.5)->get($service->health_url);
+                    $host = parse_url($service->health_url, PHP_URL_HOST) ?: ('ms-' . $service->slug);
+                    $port = (int) (parse_url($service->health_url, PHP_URL_PORT) ?: $service->port);
+
+                    // Vérification TCP ultra-rapide (300ms max) : détecte immédiatement un "docker stop"
+                    $socket = @fsockopen((string) $host, $port, $errno, $errstr, 0.3);
+                    if ($socket === false) {
+                        throw new \RuntimeException("Container {$host}:{$port} unreachable");
+                    }
+                    fclose($socket);
+
+                    $response = Http::connectTimeout(1)->timeout(1)->get($service->health_url);
                     $latencyMs = max(1, (int) round((microtime(true) - $startTime) * 1000));
                     $httpStatusCode = $response->status();
 
@@ -293,9 +303,15 @@ class HealthMonitorService
             ?: sprintf('http://ms-%s:%d/simulate', $service->slug, $service->port);
 
         try {
-            Http::timeout(0.5)->post($simulateUrl, [
-                'status' => $newStatus,
-            ]);
+            $host = parse_url($simulateUrl, PHP_URL_HOST) ?: ('ms-' . $service->slug);
+            $port = (int) (parse_url($simulateUrl, PHP_URL_PORT) ?: $service->port);
+            $socket = @fsockopen((string) $host, $port, $errno, $errstr, 0.2);
+            if ($socket !== false) {
+                fclose($socket);
+                Http::connectTimeout(1)->timeout(1)->post($simulateUrl, [
+                    'status' => $newStatus,
+                ]);
+            }
         } catch (\Throwable) {
             // Ignoré silencieusement si le conteneur cible est arrêté ou hors réseau Docker
         }
@@ -319,7 +335,7 @@ class HealthMonitorService
         $wsHubUrl = (string) env('WS_HUB_URL', 'http://ws-hub:6001/broadcast');
 
         try {
-            Http::timeout(0.5)->post($wsHubUrl, [
+            Http::connectTimeout(1)->timeout(1)->post($wsHubUrl, [
                 'event' => 'MicroserviceStatusUpdated',
                 'channel' => 'microservices-wallboard',
                 'data' => [
