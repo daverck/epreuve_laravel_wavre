@@ -1,0 +1,893 @@
+/**
+ * ============================================================================
+ * VILLE DE WAVRE — STYLES DU COMPOSANT WALLBOARD (APP.COMPONENT.CSS)
+ * ============================================================================
+ * Conçu pour un affichage NOC (Network Operations Center) 1080p / 4K :
+ *  - Halo rouge pulsé global (.wallboard-critical-halo) en cas de chute Docker
+ *  - Bandeau d'alerte critique clignotant (@keyframes alertPulse)
+ *  - Cartes des 5 microservices à fort contraste avec LEDs animées
+ *  - Sélecteur de protocole Temps Réel (WebSocket ⚡ vs SSE 📡 vs Polling 🔄)
+ * ============================================================================
+ */
+
+.wallboard-viewport {
+  min-height: 100vh;
+  padding: 16px 22px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: radial-gradient(circle at 50% 0%, #0f1b33 0%, #060a12 72%);
+  border: 4px solid transparent;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+/* Halo rouge pulsé immanquable sur tout le cadre TV dès qu'un service est DOWN */
+.wallboard-critical-halo {
+  border-color: #ef4444;
+  animation: screenRedHalo 1.4s infinite ease-in-out;
+}
+
+/* ============================================================================
+ * 1. BANDEAU D'ALERTE VISUELLE IMMÉDIATE (MODE INCIDENT CRITIQUE)
+ * ============================================================================ */
+.critical-alert-banner {
+  border-radius: 12px;
+  padding: 14px 20px;
+  border: 2px solid #f87171;
+  color: #ffffff;
+  animation: alertPulse 1.25s infinite ease-in-out;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.critical-alert-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.critical-siren-badge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.15rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.siren-icon {
+  font-size: 1.55rem;
+}
+
+.core-critical-callout {
+  background: rgba(0, 0, 0, 0.48);
+  border: 2px solid #fde047;
+  color: #fef08a;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-weight: 900;
+  font-size: 1.02rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  box-shadow: 0 0 20px rgba(250, 204, 21, 0.45);
+}
+
+.btn-recover-all {
+  background: #059669;
+  color: #ffffff;
+  border: 2px solid #6ee7b7;
+  padding: 10px 18px;
+  border-radius: 8px;
+  font-weight: 800;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease;
+  box-shadow: 0 4px 16px rgba(5, 150, 105, 0.55);
+}
+
+.btn-recover-all:hover {
+  background: #10b981;
+  transform: translateY(-1px);
+}
+
+.critical-down-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.down-service-pill {
+  background: rgba(15, 23, 42, 0.82);
+  border: 1px solid rgba(254, 202, 202, 0.55);
+  border-radius: 8px;
+  padding: 7px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.92rem;
+}
+
+.down-pill-led {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ef4444;
+  animation: ledBlinkDown 0.75s infinite;
+}
+
+.down-pill-container {
+  color: #fca5a5;
+  font-size: 0.85rem;
+}
+
+.down-pill-timer {
+  color: #fde047;
+}
+
+/* ============================================================================
+ * 2. EN-TÊTE OFFICIEL VILLE DE WAVRE
+ * ============================================================================ */
+.wallboard-header {
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 14px 20px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.brand-block {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.wavre-crest {
+  width: 66px;
+  height: 66px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #0284c7 0%, #1e40af 100%);
+  border: 2px solid #38bdf8;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 20px rgba(56, 189, 248, 0.3);
+}
+
+.wavre-crest.crest-alert {
+  background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
+  border-color: #fca5a5;
+}
+
+.crest-code {
+  font-weight: 900;
+  font-size: 0.95rem;
+  letter-spacing: 0.08em;
+}
+
+.crest-sub {
+  font-size: 0.68rem;
+  color: #e0f2fe;
+  font-weight: 700;
+}
+
+.official-overline {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: #38bdf8;
+  margin-bottom: 3px;
+}
+
+.wallboard-main-title {
+  font-size: 1.45rem;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  color: #f8fafc;
+}
+
+.header-kpis {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.kpi-box {
+  background: #09101f;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 10px;
+  padding: 8px 14px;
+  min-width: 124px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.kpi-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #94a3b8;
+  letter-spacing: 0.05em;
+}
+
+.kpi-value {
+  font-size: 1.35rem;
+  font-weight: 900;
+}
+
+.kpi-value small {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.kpi-up .kpi-value {
+  color: #10b981;
+}
+
+.kpi-degraded .kpi-value {
+  color: #f59e0b;
+}
+
+.kpi-degraded-active {
+  border-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.kpi-down .kpi-value {
+  color: #ef4444;
+}
+
+.kpi-down-active {
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.2);
+}
+
+.kpi-latency .kpi-value {
+  color: #38bdf8;
+}
+
+.kpi-clock .kpi-value {
+  color: #e2e8f0;
+}
+
+/* ============================================================================
+ * 3. SÉLECTEUR & COMPARATEUR PÉDAGOGIQUE TEMPS RÉEL (WS vs SSE vs POLLING)
+ * ============================================================================ */
+.realtime-selector-panel {
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  border-radius: 12px;
+  padding: 12px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.realtime-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.protocol-switch-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.selector-label {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: #94a3b8;
+  letter-spacing: 0.06em;
+  margin-right: 4px;
+}
+
+.protocol-btn {
+  background: #0b1324;
+  color: #cbd5e1;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 0.86rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.protocol-btn:hover {
+  border-color: #38bdf8;
+  color: #ffffff;
+}
+
+.proto-sub {
+  font-size: 0.75rem;
+  font-weight: 500;
+  opacity: 0.82;
+}
+
+.protocol-btn.active-ws {
+  background: linear-gradient(135deg, #0284c7 0%, #2563eb 100%);
+  border-color: #7dd3fc;
+  color: #ffffff;
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.45);
+}
+
+.protocol-btn.active-sse {
+  background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);
+  border-color: #c4b5fd;
+  color: #ffffff;
+  box-shadow: 0 0 16px rgba(124, 58, 237, 0.45);
+}
+
+.protocol-btn.active-polling {
+  background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+  border-color: #fcd34d;
+  color: #ffffff;
+  box-shadow: 0 0 16px rgba(245, 158, 11, 0.4);
+}
+
+.protocol-live-telemetry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.telemetry-chip {
+  background: #09101f;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 6px;
+  padding: 6px 11px;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.conn-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f59e0b;
+}
+
+.conn-dot.conn-online {
+  background: #10b981;
+  box-shadow: 0 0 8px #10b981;
+}
+
+.highlight-cyan {
+  color: #38bdf8;
+}
+
+.endpoint-chip {
+  color: #93c5fd;
+}
+
+.btn-exam-memo {
+  background: rgba(99, 102, 241, 0.18);
+  color: #c7d2fe;
+  border: 1px solid #6366f1;
+  border-radius: 8px;
+  padding: 7px 13px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.btn-exam-memo:hover {
+  background: rgba(99, 102, 241, 0.35);
+  color: #ffffff;
+}
+
+/* Panneau dépliable du Mémo Examen Oral */
+.exam-memo-drawer {
+  background: #080f1e;
+  border: 1px solid rgba(99, 102, 241, 0.45);
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.memo-header h3 {
+  font-size: 0.96rem;
+  color: #a5b4fc;
+  margin-bottom: 4px;
+}
+
+.memo-header p {
+  font-size: 0.83rem;
+  color: #94a3b8;
+}
+
+.memo-table-wrapper {
+  overflow-x: auto;
+}
+
+.memo-comparison-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.memo-comparison-table th,
+.memo-comparison-table td {
+  padding: 9px 12px;
+  text-align: left;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.memo-comparison-table th {
+  color: #94a3b8;
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  background: rgba(15, 23, 42, 0.7);
+}
+
+.row-recommended {
+  background: rgba(16, 185, 129, 0.06);
+}
+
+.row-currently-active {
+  outline: 1px solid #38bdf8;
+  background: rgba(56, 189, 248, 0.1);
+}
+
+.proto-badge {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(56, 189, 248, 0.2);
+  color: #7dd3fc;
+  margin-bottom: 3px;
+}
+
+.proto-title {
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+/* ============================================================================
+ * 4. GRILLE PRINCIPALE DES 5 MICROSERVICES DOCKER & JOURNAL DES INCIDENTS
+ * ============================================================================ */
+.wallboard-main-grid {
+  display: grid;
+  grid-template-columns: 1fr 390px;
+  gap: 18px;
+  align-items: start;
+}
+
+@media (max-width: 1280px) {
+  .wallboard-main-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.section-title-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  gap: 8px;
+}
+
+.section-title-bar h2 {
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: #e2e8f0;
+}
+
+.section-subtitle {
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+
+.microservices-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 14px;
+}
+
+/* Carte individuelle d'un microservice */
+.ms-card {
+  background: var(--bg-card);
+  border: 2px solid rgba(148, 163, 184, 0.2);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.ms-card-up {
+  border-color: rgba(16, 185, 129, 0.38);
+}
+
+.ms-card-degraded {
+  border-color: #f59e0b;
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.12) 0%, #111c33 100%);
+  box-shadow: 0 0 24px rgba(245, 158, 11, 0.2);
+}
+
+.ms-card-down {
+  border-color: #ef4444;
+  background: linear-gradient(180deg, rgba(220, 38, 38, 0.26) 0%, #1a1122 100%);
+  box-shadow: 0 0 32px rgba(239, 68, 68, 0.45);
+}
+
+.ms-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ms-led-wrapper {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+/* LED d'état animée (UP = Vert émeraude, DEGRADED = Ambre, DOWN = Rouge clignotant) */
+.ms-led {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+
+.led-up {
+  background: #10b981;
+  animation: ledPulseUp 2s infinite ease-in-out;
+}
+
+.led-degraded {
+  background: #f59e0b;
+  animation: ledPulseDegraded 1.4s infinite ease-in-out;
+}
+
+.led-down {
+  background: #ef4444;
+  animation: ledBlinkDown 0.65s infinite ease-in-out;
+}
+
+.ms-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ms-name {
+  font-size: 1.08rem;
+  font-weight: 800;
+  color: #f8fafc;
+}
+
+.badge-critical {
+  background: rgba(239, 68, 68, 0.22);
+  border: 1px solid #f87171;
+  color: #fecaca;
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 999px;
+  letter-spacing: 0.04em;
+}
+
+.ms-docker-meta {
+  font-size: 0.8rem;
+  color: #93c5fd;
+  margin-top: 3px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-pill {
+  font-size: 0.78rem;
+  font-weight: 900;
+  padding: 4px 11px;
+  border-radius: 6px;
+  letter-spacing: 0.06em;
+}
+
+.pill-up {
+  background: var(--status-up-bg);
+  color: #34d399;
+  border: 1px solid #10b981;
+}
+
+.pill-degraded {
+  background: var(--status-degraded-bg);
+  color: #fbbf24;
+  border: 1px solid #f59e0b;
+}
+
+.pill-down {
+  background: var(--status-down-bg);
+  color: #fca5a5;
+  border: 1px solid #ef4444;
+}
+
+.ms-role-description {
+  font-size: 0.86rem;
+  line-height: 1.45;
+  color: #cbd5e1;
+}
+
+/* Bandeau chronomètre de coupure interne à la carte en cas de statut DOWN */
+.ms-card-outage-strip {
+  background: rgba(185, 28, 28, 0.38);
+  border: 1px solid #f87171;
+  border-radius: 8px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #fef08a;
+}
+
+.ms-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  background: rgba(9, 16, 31, 0.75);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.metric-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.metric-label {
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.metric-val {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: #e2e8f0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.val-danger {
+  color: #f87171;
+}
+
+.val-warning {
+  color: #fbbf24;
+}
+
+/* Boutons de simulation sur chaque carte (Exigence Énoncé) */
+.ms-simulation-actions {
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.sim-label {
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: #94a3b8;
+  letter-spacing: 0.05em;
+}
+
+.sim-buttons-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.btn-sim {
+  border-radius: 7px;
+  padding: 7px 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+  text-align: center;
+}
+
+.btn-sim:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.btn-sim-down {
+  background: rgba(239, 68, 68, 0.16);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #fecaca;
+}
+
+.btn-sim-down:hover:not(:disabled) {
+  background: #dc2626;
+  color: #ffffff;
+}
+
+.btn-sim-degraded {
+  background: rgba(245, 158, 11, 0.16);
+  border-color: rgba(245, 158, 11, 0.5);
+  color: #fde68a;
+}
+
+.btn-sim-degraded:hover:not(:disabled) {
+  background: #d97706;
+  color: #ffffff;
+}
+
+.btn-sim-up {
+  background: rgba(16, 185, 129, 0.16);
+  border-color: rgba(16, 185, 129, 0.5);
+  color: #a7f3d0;
+}
+
+.btn-sim-up:hover:not(:disabled) {
+  background: #059669;
+  color: #ffffff;
+}
+
+/* ============================================================================
+ * 5. JOURNAL DES INCIDENTS EN DIRECT (RECENT_INCIDENTS)
+ * ============================================================================ */
+.incidents-sidebar {
+  background: rgba(15, 23, 42, 0.94);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 760px;
+}
+
+.incidents-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  padding-bottom: 10px;
+}
+
+.incidents-header h2 {
+  font-size: 0.92rem;
+  font-weight: 800;
+  color: #f8fafc;
+}
+
+.incidents-count {
+  font-size: 0.75rem;
+  color: #38bdf8;
+}
+
+.incidents-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.incident-item {
+  background: #09101f;
+  border-left: 4px solid #64748b;
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.incident-item.inc-down {
+  border-left-color: #ef4444;
+  background: rgba(127, 29, 29, 0.22);
+}
+
+.incident-item.inc-degraded {
+  border-left-color: #f59e0b;
+  background: rgba(120, 53, 15, 0.2);
+}
+
+.incident-item.inc-up {
+  border-left-color: #10b981;
+}
+
+.incident-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.74rem;
+}
+
+.inc-time {
+  color: #94a3b8;
+}
+
+.inc-source-badge {
+  background: rgba(148, 163, 184, 0.16);
+  color: #cbd5e1;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.68rem;
+}
+
+.inc-transition {
+  font-weight: 700;
+}
+
+.trans-down {
+  color: #f87171;
+}
+
+.trans-degraded {
+  color: #fbbf24;
+}
+
+.trans-up {
+  color: #34d399;
+}
+
+.incident-service-title {
+  font-size: 0.84rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.incident-service-title code {
+  font-size: 0.74rem;
+  color: #93c5fd;
+}
+
+.incident-reason {
+  font-size: 0.78rem;
+  color: #cbd5e1;
+  line-height: 1.38;
+}
+
+.incident-duration-badge {
+  margin-top: 3px;
+  background: rgba(16, 185, 129, 0.14);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #6ee7b7;
+  padding: 4px 8px;
+  border-radius: 5px;
+  font-size: 0.74rem;
+}

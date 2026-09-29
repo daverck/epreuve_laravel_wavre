@@ -1,0 +1,368 @@
+<!--
+  ============================================================================
+  VILLE DE WAVRE — ÉCRAN MURAL TV DE SUPERVISION (WALLBOARD NOC)
+  ============================================================================
+  Interface haute visibilité conçue pour l'équipe IT de la Ville de Wavre :
+   1. Halo rouge pulsé sur tout le cadre de l'écran dès qu'un service est DOWN
+   2. Bandeau d'alerte critique clignotant (@keyframes alertPulse) avec chronomètre
+   3. Sélecteur interactif Temps Réel (WebSocket ⚡ vs SSE 📡 vs Polling 🔄) + Mémo Oral
+   4. Grille des 5 microservices Docker (core, mailing, carto, voirie, salle)
+   5. Journal chronologique des incidents en direct (recent_incidents)
+  ============================================================================
+-->
+<div class="wallboard-viewport" [class.wallboard-critical-halo]="hasDownService">
+
+  <!-- ========================================================================
+       1. BANDEAU D'ALERTE VISUELLE IMMÉDIATE (MODE INCIDENT CRITIQUE)
+       S'affiche instantanément dès qu'au moins un microservice passe à DOWN
+       ======================================================================== -->
+  <section class="critical-alert-banner" *ngIf="hasDownService" role="alert" aria-live="assertive">
+    <div class="critical-alert-top">
+      <div class="critical-siren-badge">
+        <span class="siren-icon">🚨</span>
+        <span class="siren-count">{{ downServices.length }} / 5 MICROSERVICE(S) EN PANNE (DOWN)</span>
+      </div>
+
+      <!-- Mention spéciale exigée si le microservice CORE (Interface Client) est coupé -->
+      <div class="core-critical-callout" *ngIf="isCoreServiceDown">
+        ⚠️ ALERTE CRITIQUE GLOBALE : LE MICROSERVICE CORE (INTERFACE CLIENT) EST COUPÉ
+      </div>
+
+      <!-- Bouton rapide d'acquittement et de rétablissement global -->
+      <button
+        type="button"
+        class="btn-recover-all"
+        (click)="recoverAllImmediately()"
+        title="Redémarrer et reconnecter tous les conteneurs Docker immédiatement">
+        🟢 Rétablir tous les services immédiatement
+      </button>
+    </div>
+
+    <!-- Liste des services déconnectés avec leur chronomètre de panne en direct -->
+    <div class="critical-down-list">
+      <div class="down-service-pill" *ngFor="let downItem of downServices; trackBy: trackByServiceSlug">
+        <span class="down-pill-led"></span>
+        <strong class="down-pill-name">{{ downItem.name }}</strong>
+        <code class="down-pill-container">{{ downItem.container_name }}:{{ downItem.port }}</code>
+        <span class="down-pill-timer">
+          ⏱️ Durée de panne : <strong>{{ formatDowntimeStopwatch(downItem.down_since) }}</strong>
+        </span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================================================
+       2. EN-TÊTE OFFICIEL NOC : VILLE DE WAVRE — SUPERVISION DES MICROSERVICES
+       ======================================================================== -->
+  <header class="wallboard-header">
+    <div class="brand-block">
+      <div class="wavre-crest" [class.crest-alert]="hasDownService">
+        <span class="crest-code">WAVRE</span>
+        <span class="crest-sub">IT • NOC</span>
+      </div>
+      <div class="brand-titles">
+        <div class="official-overline">
+          ADMINISTRATION COMMUNALE DE WAVRE • ARCHITECTURE DOCKER &amp; LARAVEL 12
+        </div>
+        <h1 class="wallboard-main-title">
+          VILLE DE WAVRE — SUPERVISION DES MICROSERVICES DOCKER
+        </h1>
+      </div>
+    </div>
+
+    <!-- Indicateurs globaux (KPIs) lisibles à 10 mètres sur écran TV -->
+    <div class="header-kpis">
+      <div class="kpi-box kpi-up">
+        <span class="kpi-label">OPÉRATIONNELS (UP)</span>
+        <span class="kpi-value">{{ upServices.length }}<small>/5</small></span>
+      </div>
+      <div class="kpi-box kpi-degraded" [class.kpi-degraded-active]="degradedServices.length > 0">
+        <span class="kpi-label">RALENTIS (DEGRADED)</span>
+        <span class="kpi-value">{{ degradedServices.length }}<small>/5</small></span>
+      </div>
+      <div class="kpi-box kpi-down" [class.kpi-down-active]="hasDownService">
+        <span class="kpi-label">HORS-LIGNE (DOWN)</span>
+        <span class="kpi-value">{{ downServices.length }}<small>/5</small></span>
+      </div>
+      <div class="kpi-box kpi-latency">
+        <span class="kpi-label">LATENCE MOYENNE</span>
+        <span class="kpi-value mono">{{ averageLatencyMs }}<small> ms</small></span>
+      </div>
+      <div class="kpi-box kpi-clock">
+        <span class="kpi-label">HEURE MURALE NOC</span>
+        <span class="kpi-value mono">{{ currentWallboardClock }}</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ========================================================================
+       3. SÉLECTEUR & COMPARATEUR PÉDAGOGIQUE TEMPS RÉEL
+          (WebSocket ⚡ vs SSE 📡 vs Polling 🔄 — Réponse Examen Écrit & Oral)
+       ======================================================================== -->
+  <section class="realtime-selector-panel">
+    <div class="realtime-toolbar">
+      <div class="protocol-switch-group">
+        <span class="selector-label">CANAL TEMPS RÉEL ACTIF :</span>
+
+        <button
+          type="button"
+          class="protocol-btn"
+          [class.active-ws]="protocolMetrics.activeMode === 'WEBSOCKET'"
+          (click)="selectTransportMode('WEBSOCKET')">
+          ⚡ WebSocket <span class="proto-sub">(Full-Duplex &lt; 10 ms)</span>
+        </button>
+
+        <button
+          type="button"
+          class="protocol-btn"
+          [class.active-sse]="protocolMetrics.activeMode === 'SSE'"
+          (click)="selectTransportMode('SSE')">
+          📡 SSE <span class="proto-sub">(EventSource HTTP Stream)</span>
+        </button>
+
+        <button
+          type="button"
+          class="protocol-btn"
+          [class.active-polling]="protocolMetrics.activeMode === 'POLLING'"
+          (click)="selectTransportMode('POLLING')">
+          🔄 Polling <span class="proto-sub">(HTTP GET / 2s)</span>
+        </button>
+      </div>
+
+      <!-- Métriques mesurées en direct sur le protocole sélectionné -->
+      <div class="protocol-live-telemetry">
+        <div class="telemetry-chip">
+          <span class="conn-dot" [class.conn-online]="protocolMetrics.connectionState === 'CONNECTE'"></span>
+          <span>État : <strong>{{ protocolMetrics.connectionState }}</strong></span>
+        </div>
+        <div class="telemetry-chip">
+          <span>Trames reçues : <strong class="mono">{{ protocolMetrics.eventsReceivedCount }}</strong></span>
+        </div>
+        <div class="telemetry-chip">
+          <span>Latence Protocole : <strong class="mono highlight-cyan">{{ protocolMetrics.lastProtocolLatencyMs }} ms</strong></span>
+        </div>
+        <div class="telemetry-chip endpoint-chip">
+          <code class="mono">{{ protocolMetrics.endpointDisplay }}</code>
+        </div>
+
+        <button
+          type="button"
+          class="btn-exam-memo"
+          (click)="toggleExamMemo()">
+          🎓 {{ isExamMemoExpanded ? 'Masquer' : 'Afficher' }} Mémo Examen Oral : Pourquoi WebSockets vs SSE vs Polling ?
+        </button>
+      </div>
+    </div>
+
+    <!-- Panneau dépliable : Mémo Examen Oral (WebSockets vs SSE vs Short Polling) -->
+    <div class="exam-memo-drawer" *ngIf="isExamMemoExpanded">
+      <div class="memo-header">
+        <h3>
+          🎓 Synthèse Architecturale (Examen Écrit &amp; Défense Orale) — Comparaison des 3 Protocoles Temps Réel
+        </h3>
+        <p>{{ protocolMetrics.statusDetail }}</p>
+      </div>
+
+      <div class="memo-table-wrapper">
+        <table class="memo-comparison-table">
+          <thead>
+            <tr>
+              <th>Protocole</th>
+              <th>Sens de Communication</th>
+              <th>Latence d'Alerte</th>
+              <th>Charge Réseau / Serveur</th>
+              <th>Reconnexion</th>
+              <th>Justification Ville de Wavre (5 Microservices)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              *ngFor="let row of protocolComparisonRows"
+              [class.row-recommended]="row.isRecommended"
+              [class.row-currently-active]="protocolMetrics.activeMode === row.protocol">
+              <td>
+                <span class="proto-badge">{{ row.badge }}</span>
+                <div class="proto-title">{{ row.title }}</div>
+              </td>
+              <td>{{ row.direction }}</td>
+              <td class="mono">{{ row.averageLatency }}</td>
+              <td>{{ row.networkOverhead }}</td>
+              <td>{{ row.reconnectBehavior }}</td>
+              <td>{{ row.wavreVerdict }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================================================
+       4. GRILLE PRINCIPALE DES 5 MICROSERVICES DOCKER (CORE, MAILING, CARTO, VOIRIE, SALLE)
+       ======================================================================== -->
+  <main class="wallboard-main-grid">
+    <section class="microservices-section">
+      <div class="section-title-bar">
+        <h2>ÉTAT EN TEMPS RÉEL DES 5 CONTENEURS DOCKER DE LA VILLE DE WAVRE</h2>
+        <span class="section-subtitle">
+          Cliquez sur les boutons de simulation de n'importe quelle carte pour tester la détection immédiate des pannes
+        </span>
+      </div>
+
+      <div class="microservices-cards-grid">
+        <article
+          class="ms-card"
+          *ngFor="let service of microservices; trackBy: trackByServiceSlug"
+          [class.ms-card-up]="service.status === 'UP'"
+          [class.ms-card-degraded]="service.status === 'DEGRADED'"
+          [class.ms-card-down]="service.status === 'DOWN'"
+          [class.ms-card-critical-core]="service.is_critical">
+
+          <!-- En-tête de la carte : LED animée + Nom + Badge CRITIQUE + Statut -->
+          <div class="ms-card-header">
+            <div class="ms-led-wrapper">
+              <span
+                class="ms-led"
+                [class.led-up]="service.status === 'UP'"
+                [class.led-degraded]="service.status === 'DEGRADED'"
+                [class.led-down]="service.status === 'DOWN'">
+              </span>
+              <div class="ms-title-group">
+                <div class="ms-title-row">
+                  <h3 class="ms-name">{{ service.name }}</h3>
+                  <span class="badge-critical" *ngIf="service.is_critical">CRITIQUE • FRONTEND CITOYEN</span>
+                </div>
+                <div class="ms-docker-meta mono">
+                  <span>🐳 {{ service.container_name }}</span>
+                  <span class="meta-sep">•</span>
+                  <span>Port :{{ service.port }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div
+              class="status-pill"
+              [class.pill-up]="service.status === 'UP'"
+              [class.pill-degraded]="service.status === 'DEGRADED'"
+              [class.pill-down]="service.status === 'DOWN'">
+              {{ service.status }}
+            </div>
+          </div>
+
+          <!-- Rôle métier exact du microservice au sein de la Ville de Wavre -->
+          <p class="ms-role-description">
+            {{ service.role_description }}
+          </p>
+
+          <!-- Bandeau chronomètre de panne localisé sur la carte si le service est DOWN -->
+          <div class="ms-card-outage-strip" *ngIf="service.status === 'DOWN'">
+            <span class="outage-icon">🚨 CONTENEUR DÉCONNECTÉ</span>
+            <span class="outage-stopwatch mono">
+              Durée coupure : {{ formatDowntimeStopwatch(service.down_since) }}
+            </span>
+          </div>
+
+          <!-- Métriques techniques du conteneur (Latence, Disponibilité SLA, CPU, RAM) -->
+          <div class="ms-metrics-grid">
+            <div class="metric-cell">
+              <span class="metric-label">LATENCE HTTP</span>
+              <span
+                class="metric-val mono"
+                [class.val-danger]="service.status === 'DOWN'"
+                [class.val-warning]="service.status === 'DEGRADED'">
+                {{ service.status === 'DOWN' ? 'TIMEOUT (0 ms)' : service.latency_ms + ' ms' }}
+              </span>
+            </div>
+            <div class="metric-cell">
+              <span class="metric-label">DISPONIBILITÉ SLA</span>
+              <span class="metric-val mono">{{ service.uptime_percent }}%</span>
+            </div>
+            <div class="metric-cell">
+              <span class="metric-label">CHARGE CPU / RAM</span>
+              <span class="metric-val mono">{{ service.cpu_usage_percent }}% • {{ service.memory_mb }} Mo</span>
+            </div>
+            <div class="metric-cell">
+              <span class="metric-label">SONDE DOCKER</span>
+              <span class="metric-val mono">{{ service.endpoint_url }}</span>
+            </div>
+          </div>
+
+          <!-- ================================================================
+               BOUTONS DE SIMULATION EXIGÉS PAR L'ÉNONCÉ DE LA VILLE DE WAVRE
+               ================================================================ -->
+          <div class="ms-simulation-actions">
+            <span class="sim-label">SIMULATION EN DIRECT (JURY) :</span>
+            <div class="sim-buttons-row">
+              <button
+                type="button"
+                class="btn-sim btn-sim-down"
+                [disabled]="service.status === 'DOWN'"
+                (click)="simulateStatus(service.slug, 'DOWN')">
+                🔴 Simuler Déconnexion (DOWN)
+              </button>
+
+              <button
+                type="button"
+                class="btn-sim btn-sim-degraded"
+                [disabled]="service.status === 'DEGRADED'"
+                (click)="simulateStatus(service.slug, 'DEGRADED')">
+                🟠 Simuler Ralentissement (DEGRADED)
+              </button>
+
+              <button
+                type="button"
+                class="btn-sim btn-sim-up"
+                [disabled]="service.status === 'UP'"
+                (click)="simulateStatus(service.slug, 'UP')">
+                🟢 Simuler Reconnexion (UP)
+              </button>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         5. JOURNAL DES INCIDENTS EN DIRECT (`recent_incidents`)
+         ====================================================================== -->
+    <aside class="incidents-sidebar">
+      <div class="incidents-header">
+        <h2>📋 JOURNAL DES INCIDENTS EN DIRECT</h2>
+        <span class="incidents-count mono">{{ recentIncidents.length }} événement(s)</span>
+      </div>
+
+      <div class="incidents-feed">
+        <div
+          class="incident-item"
+          *ngFor="let inc of recentIncidents; trackBy: trackByIncidentId"
+          [class.inc-down]="inc.new_status === 'DOWN'"
+          [class.inc-degraded]="inc.new_status === 'DEGRADED'"
+          [class.inc-up]="inc.new_status === 'UP'">
+
+          <div class="incident-top-row">
+            <span class="inc-time mono">{{ inc.occurred_at | date:'HH:mm:ss' }}</span>
+            <span class="inc-source-badge mono">{{ inc.source }}</span>
+            <span
+              class="inc-transition mono"
+              [class.trans-down]="inc.new_status === 'DOWN'"
+              [class.trans-degraded]="inc.new_status === 'DEGRADED'"
+              [class.trans-up]="inc.new_status === 'UP'">
+              {{ inc.previous_status }} ➔ {{ inc.new_status }}
+            </span>
+          </div>
+
+          <div class="incident-service-title">
+            <strong>{{ inc.service_name }}</strong>
+            <code class="mono">({{ inc.container_name }})</code>
+          </div>
+
+          <p class="incident-reason">{{ inc.reason }}</p>
+
+          <div class="incident-duration-badge" *ngIf="inc.duration_seconds !== null">
+            ⏱️ Durée totale de la coupure avant rétablissement :
+            <strong>{{ formatSecondsToReadableDuration(inc.duration_seconds) }}</strong>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </main>
+</div>
