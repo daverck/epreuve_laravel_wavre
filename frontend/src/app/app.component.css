@@ -1,12 +1,12 @@
 /**
  * ============================================================================
- * VILLE DE WAVRE â€” STYLES DU COMPOSANT WALLBOARD (APP.COMPONENT.CSS)
+ * VILLE DE WAVRE — STYLES DU COMPOSANT WALLBOARD (APP.COMPONENT.CSS)
  * ============================================================================
- * ConÃ§u pour un affichage NOC (Network Operations Center) 1080p / 4K :
- *  - Halo rouge pulsÃ© global (.wallboard-critical-halo) en cas de chute Docker
+ * Conçu pour un affichage NOC (Network Operations Center) 1080p / 4K :
+ *  - Halo rouge pulsé global (.wallboard-critical-halo) en cas de chute Docker
  *  - Bandeau d'alerte critique clignotant (@keyframes alertPulse)
- *  - Indicateur d'Ã©tat : ðŸ”„ Supervision HTTP REST Active â€¢ Sonde Docker toutes les 2s
- *  - Cartes des 5 microservices Ã  fort contraste avec LEDs animÃ©es
+ *  - Indicateur d'état : 🔄 Supervision HTTP REST Active • Sonde Docker toutes les 2s
+ *  - Cartes des 5 microservices à fort contraste avec LEDs animées
  * ============================================================================
  */
 
@@ -21,14 +21,14 @@
   transition: border-color 0.25s ease, box-shadow 0.25s ease;
 }
 
-/* Halo rouge pulsÃ© immanquable sur tout le cadre TV dÃ¨s qu'un service est DOWN */
+/* Halo rouge pulsé immanquable sur tout le cadre TV dès qu'un service est DOWN */
 .wallboard-critical-halo {
   border-color: #ef4444;
   animation: screenRedHalo 1.4s infinite ease-in-out;
 }
 
 /* ============================================================================
- * 1. BANDEAU D'ALERTE VISUELLE IMMÃ‰DIATE (MODE INCIDENT CRITIQUE)
+ * 1. BANDEAU D'ALERTE VISUELLE IMMÉDIATE (MODE INCIDENT CRITIQUE)
  * ============================================================================ */
 .critical-alert-banner {
   border-radius: 12px;
@@ -129,7 +129,7 @@
 }
 
 /* ============================================================================
- * 2. EN-TÃŠTE OFFICIEL VILLE DE WAVRE & INDICATEUR SUPERVISION HTTP REST
+ * 2. EN-TÊTE OFFICIEL VILLE DE WAVRE & INDICATEUR SUPERVISION HTTP REST
  * ============================================================================ */
 .wallboard-header {
   background: rgba(15, 23, 42, 0.92);
@@ -196,7 +196,7 @@
   margin-bottom: 6px;
 }
 
-/* Indicateur Ã©purÃ© Supervision HTTP REST dans le header */
+/* Indicateur épuré Supervision HTTP REST dans le header */
 .rest-status-bar {
   display: inline-flex;
   flex-wrap: wrap;
@@ -392,7 +392,7 @@
   gap: 12px;
 }
 
-/* LED d'Ã©tat animÃ©e (UP = Vert Ã©meraude, DEGRADED = Ambre, DOWN = Rouge clignotant) */
+/* LED d'état animée (UP = Vert émeraude, DEGRADED = Ambre, DOWN = Rouge clignotant) */
 .ms-led {
   width: 18px;
   height: 18px;
@@ -481,7 +481,7 @@
   color: #cbd5e1;
 }
 
-/* Bandeau chronomÃ¨tre de coupure interne Ã  la carte en cas de statut DOWN */
+/* Bandeau chronomètre de coupure interne à la carte en cas de statut DOWN */
 .ms-card-outage-strip {
   background: rgba(185, 28, 28, 0.38);
   border: 1px solid #f87171;
@@ -554,7 +554,7 @@
   color: #fbbf24;
 }
 
-/* Boutons de simulation sur chaque carte (Exigence Ã‰noncÃ©) */
+/* Boutons de simulation sur chaque carte (Exigence énoncé) */
 .ms-simulation-actions {
   border-top: 1px solid rgba(148, 163, 184, 0.16);
   padding-top: 10px;

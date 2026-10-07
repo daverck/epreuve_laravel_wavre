@@ -1,14 +1,14 @@
 /**
  * ============================================================================
- * VILLE DE WAVRE â€” SERVICE DE SUPERVISION HTTP REST (MONITORING.SERVICE.TS)
+ * VILLE DE WAVRE — SERVICE DE SUPERVISION HTTP REST (MONITORING.SERVICE.TS)
  * ============================================================================
- * Architecture basÃ©e sur les Signals Angular 18 et un Short Polling HTTP REST
- * cadencÃ© toutes les 2 secondes (`2000 ms`) :
+ * Architecture basée sur les Signals Angular 18 et un Short Polling HTTP REST
+ * cadencé toutes les 2 secondes (`2000 ms`) :
  *  1. Appelle `GET http://localhost:8000/api/microservices?probe=true` toutes
  *     les 2 secondes via `setInterval(() => this.fetchDashboard(), 2000)`.
- *  2. Met Ã  jour atomiquement le Signal `dashboardState` (`services`,
+ *  2. Met à jour atomiquement le Signal `dashboardState` (`services`,
  *     `recentIncidents`, `pollingState`).
- *  3. Permet de simuler en direct la dÃ©connexion (`DOWN`), le ralentissement
+ *  3. Permet de simuler en direct la déconnexion (`DOWN`), le ralentissement
  *     (`DEGRADED`) et la reconnexion (`UP`) de chacun des 5 microservices via
  *     `POST http://localhost:8000/api/microservices/{slug}/simulate`.
  * ============================================================================
@@ -30,10 +30,10 @@ import {
 export class RealtimeMonitoringService implements OnDestroy {
   private readonly http = inject(HttpClient);
 
-  /** Point d'entrÃ©e REST du Backend Laravel 12 */
+  /** Point d'entrée REST du Backend Laravel 12 */
   private readonly apiBaseUrl = 'http://localhost:8000/api/microservices';
 
-  /** Catalogue de rÃ©fÃ©rence des 5 microservices Docker de la Ville de Wavre */
+  /** Catalogue de référence des 5 microservices Docker de la Ville de Wavre */
   private readonly initialCatalog: MicroserviceItem[] = [
     {
       id: 1,
@@ -43,7 +43,7 @@ export class RealtimeMonitoringService implements OnDestroy {
       port: 8081,
       endpoint_url: 'http://ms-core:8081/health',
       role_description:
-        "GÃ¨re l'interface client principale du guichet citoyen et orchestre les 4 microservices mÃ©tiers de la Ville de Wavre.",
+        "Sert l'interface client principale du guichet citoyen et orchestre les 4 microservices métiers de la Ville de Wavre.",
       is_critical: true,
       status: 'UP',
       latency_ms: 11,
@@ -61,7 +61,7 @@ export class RealtimeMonitoringService implements OnDestroy {
       port: 8082,
       endpoint_url: 'http://ms-mailing:8082/health',
       role_description:
-        "GÃ¨re l'envoi transactionnel d'e-mails, accusÃ©s de rÃ©ception administratifs et notifications citoyennes.",
+        "Gère l'envoi transactionnel d'e-mails, accusés de réception administratifs et notifications citoyennes.",
       is_critical: false,
       status: 'UP',
       latency_ms: 16,
@@ -79,7 +79,7 @@ export class RealtimeMonitoringService implements OnDestroy {
       port: 8083,
       endpoint_url: 'http://ms-carto:8083/health',
       role_description:
-        'Fournit le SystÃ¨me dâ€™Information GÃ©ographique (SIG), le cadastre communal et le gÃ©ocodage des parcelles.',
+        "Fournit le Système d'Information Géographique (SIG), le cadastre communal et le géocodage des parcelles.",
       is_critical: false,
       status: 'UP',
       latency_ms: 23,
@@ -92,12 +92,12 @@ export class RealtimeMonitoringService implements OnDestroy {
     {
       id: 4,
       slug: 'voirie',
-      name: 'Microservice Voirie & MobilitÃ©',
+      name: 'Microservice Voirie & Mobilité',
       container_name: 'wavre-ms-voirie',
       port: 8084,
       endpoint_url: 'http://ms-voirie:8084/health',
       role_description:
-        'GÃ¨re les arrÃªtÃ©s de police, les chantiers sur la voie publique et les autorisations de stationnement.',
+        'Gère les arrêtés de police, les chantiers sur la voie publique et les autorisations de stationnement.',
       is_critical: false,
       status: 'UP',
       latency_ms: 18,
@@ -115,7 +115,7 @@ export class RealtimeMonitoringService implements OnDestroy {
       port: 8085,
       endpoint_url: 'http://ms-salle:8085/health',
       role_description:
-        'GÃ¨re le planning et la rÃ©servation des salles communales, halls sportifs et matÃ©riel Ã©vÃ©nementiel.',
+        'Gère le planning et la réservation des salles communales, halls sportifs et matériel événementiel.',
       is_critical: false,
       status: 'UP',
       latency_ms: 14,
@@ -128,8 +128,8 @@ export class RealtimeMonitoringService implements OnDestroy {
   ];
 
   /**
-   * Signal rÃ©actif principal (`dashboardState`) regroupant l'Ã©tat des 5 microservices,
-   * le journal des incidents (`recentIncidents`) et l'Ã©tat du Short Polling (`pollingState`).
+   * Signal réactif principal (`dashboardState`) regroupant l'état des 5 microservices,
+   * le journal des incidents (`recentIncidents`) et l'état du Short Polling (`pollingState`).
    */
   public readonly dashboardState = signal<DashboardState>({
     services: this.initialCatalog,
@@ -143,7 +143,7 @@ export class RealtimeMonitoringService implements OnDestroy {
         new_status: 'UP',
         source: 'DOCKER_PROBE',
         reason:
-          'Initialisation du Wallboard NOC Ville de Wavre â€” Supervision HTTP REST active (Sonde Docker toutes les 2s).',
+          'Initialisation du Wallboard NOC Ville de Wavre — Supervision HTTP REST active (Sonde Docker toutes les 2s).',
         occurred_at: new Date().toISOString(),
         duration_seconds: null,
       },
@@ -157,7 +157,7 @@ export class RealtimeMonitoringService implements OnDestroy {
     },
   });
 
-  /** Signaux dÃ©rivÃ©s (computed) pour un accÃ¨s direct dans le composant Wallboard */
+  /** Signaux dérivés (computed) pour un accès direct dans le composant Wallboard */
   public readonly servicesSignal = computed(() => this.dashboardState().services);
   public readonly recentIncidentsSignal = computed(
     () => this.dashboardState().recentIncidents
@@ -445,7 +445,7 @@ export class RealtimeMonitoringService implements OnDestroy {
   }
 
   /**
-   * Applique la rÃ©ponse JSON reÃ§ue du Backend Laravel au Signal `dashboardState`.
+   * Applique la réponse JSON reçue du Backend Laravel au Signal `dashboardState`.
    */
   private applyDashboardPayload(response: unknown, measuredLatencyMs: number): void {
     if (!response || typeof response !== 'object') {
@@ -489,9 +489,15 @@ export class RealtimeMonitoringService implements OnDestroy {
               : catalogItem.down_since ?? new Date().toISOString()
             : null;
 
+        const updatedRoleDescription =
+          typeof match['description'] === 'string' && match['description'].length > 0
+            ? match['description']
+            : catalogItem.role_description;
+
         return {
           ...catalogItem,
           status: validStatus,
+          role_description: updatedRoleDescription,
           endpoint_url: typeof match['health_url'] === 'string' ? match['health_url'] : catalogItem.endpoint_url,
           latency_ms:
             typeof match['latency_ms'] === 'number'
