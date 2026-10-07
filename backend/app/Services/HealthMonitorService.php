@@ -250,8 +250,6 @@ class HealthMonitorService
                 'latency_ms' => $latencyMs,
                 'is_healthy' => $detectedStatus === 'UP',
                 'checked_at' => $now,
-                'created_at' => $now,
-                'updated_at' => $now,
             ];
 
             if ($detectedStatus !== $service->status) {
