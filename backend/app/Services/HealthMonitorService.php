@@ -210,7 +210,13 @@ class HealthMonitorService
                 $host = self::IP_MAP[$service->slug] ?? sprintf('ms-%s', $service->slug);
                 $errno = 0;
                 $errstr = '';
-                $socket = @fsockopen($host, (int) $service->port, $errno, $errstr, 0.15);
+                $socket = @stream_socket_client(
+                    sprintf('tcp://%s:%d', $host, (int) $service->port),
+                    $errno,
+                    $errstr,
+                    0.2,
+                    STREAM_CLIENT_CONNECT
+                );
 
                 if ($socket === false) {
                     // Conteneur Docker réellement arrêté (ex: `docker stop wavre-ms-voirie`)
@@ -308,14 +314,20 @@ class HealthMonitorService
      */
     private function notifyDockerContainerSimulation(Microservice $service, string $newStatus): void
     {
-        if (app()->runningUnitTests()) {
+        if (app()->runningUnitTests() || $newStatus === 'DOWN') {
             return;
         }
 
         $host = self::IP_MAP[$service->slug] ?? sprintf('ms-%s', $service->slug);
         $errno = 0;
         $errstr = '';
-        $socket = @fsockopen($host, (int) $service->port, $errno, $errstr, 0.15);
+        $socket = @stream_socket_client(
+            sprintf('tcp://%s:%d', $host, (int) $service->port),
+            $errno,
+            $errstr,
+            0.2,
+            STREAM_CLIENT_CONNECT
+        );
         if ($socket === false) {
             return;
         }
