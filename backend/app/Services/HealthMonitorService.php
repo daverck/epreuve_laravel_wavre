@@ -199,6 +199,7 @@ class HealthMonitorService
         $microservices = Microservice::query()->orderBy('id')->get();
         $now = now();
         $dockerProbeEnabled = filter_var(env('DOCKER_PROBE_ENABLED', false), FILTER_VALIDATE_BOOLEAN);
+        $healthChecksToInsert = [];
 
         foreach ($microservices as $service) {
             $startTime = microtime(true);
@@ -243,13 +244,15 @@ class HealthMonitorService
                 }
             }
 
-            HealthCheck::create([
+            $healthChecksToInsert[] = [
                 'microservice_id' => $service->id,
                 'http_status_code' => $httpStatusCode,
                 'latency_ms' => $latencyMs,
                 'is_healthy' => $detectedStatus === 'UP',
                 'checked_at' => $now,
-            ]);
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
 
             if ($detectedStatus !== $service->status) {
                 $this->simulateStatus(
@@ -264,6 +267,10 @@ class HealthMonitorService
                     'last_checked_at' => $now,
                 ]);
             }
+        }
+
+        if (! empty($healthChecksToInsert)) {
+            HealthCheck::insert($healthChecksToInsert);
         }
     }
 
