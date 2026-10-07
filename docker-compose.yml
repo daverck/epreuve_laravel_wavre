@@ -16,7 +16,8 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
     networks:
-      - wavre-net
+      wavre-net:
+        ipv4_address: 172.28.0.11
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-psecret"]
       interval: 5s
@@ -44,12 +45,18 @@ services:
       APP_DEBUG: "true"
       APP_URL: http://localhost:8000
       DB_CONNECTION: mysql
-      DB_HOST: mysql
+      DB_HOST: 172.28.0.11
       DB_PORT: 3306
       DB_DATABASE: wavre_monitoring
       DB_USERNAME: wavre
       DB_PASSWORD: secret
       DOCKER_PROBE_ENABLED: "true"
+    extra_hosts:
+      - "ms-core:172.28.0.81"
+      - "ms-mailing:172.28.0.82"
+      - "ms-carto:172.28.0.83"
+      - "ms-voirie:172.28.0.84"
+      - "ms-salle:172.28.0.85"
     depends_on:
       mysql:
         condition: service_healthy
@@ -64,7 +71,8 @@ services:
       ms-salle:
         condition: service_started
     networks:
-      - wavre-net
+      wavre-net:
+        ipv4_address: 172.28.0.10
 
   # ==========================================================================
   # 3. FRONTEND WALLBOARD (Angular + CSS Moderne)
@@ -78,11 +86,12 @@ services:
       - ./frontend:/app
     ports:
       - "4200:4200"
-    command: sh -c "npm install && exec npm run start"
+    command: sh -c "if [ ! -d node_modules/@angular/core ]; then npm install; fi && exec npm start"
     depends_on:
       - backend
     networks:
-      - wavre-net
+      wavre-net:
+        ipv4_address: 172.28.0.20
 
   # ==========================================================================
   # 4. LES 5 CONTENEURS MICROSERVICES INTERNES DE LA VILLE DE WAVRE
@@ -103,7 +112,8 @@ services:
     ports:
       - "8081:8081"
     networks:
-      - wavre-net
+      wavre-net:
+        ipv4_address: 172.28.0.81
 
   # 4.2 Microservice MAILING : Envoie les mails pour les différents processus
   ms-mailing:
@@ -120,7 +130,8 @@ services:
     ports:
       - "8082:8082"
     networks:
-      - wavre-net
+      wavre-net:
+        ipv4_address: 172.28.0.82
 
   # 4.3 Microservice CARTO : Gère le CRUD des données cartographiques
   ms-carto:
@@ -137,7 +148,8 @@ services:
     ports:
       - "8083:8083"
     networks:
-      - wavre-net
+      wavre-net:
+        ipv4_address: 172.28.0.83
 
   # 4.4 Microservice VOIRIE : Gère les arrêtés de police et autorisations de stationnement
   ms-voirie:
@@ -154,7 +166,8 @@ services:
     ports:
       - "8084:8084"
     networks:
-      - wavre-net
+      wavre-net:
+        ipv4_address: 172.28.0.84
 
   # 4.5 Microservice SALLE : Gère les locations de salles
   ms-salle:
@@ -171,11 +184,15 @@ services:
     ports:
       - "8085:8085"
     networks:
-      - wavre-net
+      wavre-net:
+        ipv4_address: 172.28.0.85
 
 networks:
   wavre-net:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
 
 volumes:
   mysql_data:

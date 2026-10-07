@@ -15,6 +15,19 @@ use Illuminate\Support\Facades\Http;
 class HealthMonitorService
 {
     /**
+     * Adresses IP statiques des 5 microservices sur le sous-réseau Docker `wavre-net` (172.28.0.0/16).
+     * L'accès par IP directe évite toute temporisation DNS (`getaddrinfo` / resolv.conf)
+     * lorsqu'un conteneur est arrêté (`docker stop`), garantissant une sonde instantanée (< 150 ms).
+     */
+    private const IP_MAP = [
+        'core' => '172.28.0.81',
+        'mailing' => '172.28.0.82',
+        'carto' => '172.28.0.83',
+        'voirie' => '172.28.0.84',
+        'salle' => '172.28.0.85',
+    ];
+
+    /**
      * Construit la charge utile complète destinée à l'écran de supervision (Wallboard Angular).
      *
      * @param  bool  $probeDocker  Si true, interroge d'abord les conteneurs Docker via HTTP (/health).
@@ -194,7 +207,7 @@ class HealthMonitorService
             $detectedStatus = $service->status;
 
             if (! app()->runningUnitTests() && $dockerProbeEnabled) {
-                $host = sprintf('ms-%s', $service->slug);
+                $host = self::IP_MAP[$service->slug] ?? sprintf('ms-%s', $service->slug);
                 $errno = 0;
                 $errstr = '';
                 $socket = @fsockopen($host, (int) $service->port, $errno, $errstr, 0.15);
@@ -299,7 +312,7 @@ class HealthMonitorService
             return;
         }
 
-        $host = sprintf('ms-%s', $service->slug);
+        $host = self::IP_MAP[$service->slug] ?? sprintf('ms-%s', $service->slug);
         $errno = 0;
         $errstr = '';
         $socket = @fsockopen($host, (int) $service->port, $errno, $errstr, 0.15);
@@ -308,8 +321,7 @@ class HealthMonitorService
         }
         fclose($socket);
 
-        $simulateUrl = preg_replace('#/health$#', '/simulate', $service->health_url)
-            ?: sprintf('http://ms-%s:%d/simulate', $service->slug, $service->port);
+        $simulateUrl = sprintf('http://%s:%d/simulate', $host, $service->port);
 
         try {
             Http::connectTimeout(1)->timeout(1)->post($simulateUrl, [

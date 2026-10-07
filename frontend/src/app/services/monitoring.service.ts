@@ -176,6 +176,9 @@ export class RealtimeMonitoringService implements OnDestroy {
    */
   private mutationVersion = 0;
 
+  /** Empêche l'empilement de requêtes HTTP concurrentes si un cycle de sonde prend plus de 2s */
+  private isFetchInFlight = false;
+
   constructor() {
     // 1. Chargement initial immédiat au démarrage
     this.fetchDashboard();
@@ -201,6 +204,11 @@ export class RealtimeMonitoringService implements OnDestroy {
    * et met à jour le Signal `dashboardState` (`services`, `recentIncidents`, `pollingState`).
    */
   public fetchDashboard(): void {
+    if (this.isFetchInFlight) {
+      return;
+    }
+    this.isFetchInFlight = true;
+
     const startedAt = performance.now();
     const versionAtRequestStart = this.mutationVersion;
 
@@ -208,6 +216,7 @@ export class RealtimeMonitoringService implements OnDestroy {
       .get<unknown>(`${this.apiBaseUrl}?probe=true`)
       .pipe(
         tap((response: unknown) => {
+          this.isFetchInFlight = false;
           // Si l'utilisateur a cliqué sur un bouton pendant que cette requête GET était en vol,
           // on ignore cette réponse obsolète pour ne jamais écraser le nouvel état.
           if (versionAtRequestStart !== this.mutationVersion) {
@@ -220,6 +229,7 @@ export class RealtimeMonitoringService implements OnDestroy {
           this.applyDashboardPayload(response, measuredLatencyMs);
         }),
         catchError(() => {
+          this.isFetchInFlight = false;
           if (versionAtRequestStart !== this.mutationVersion) {
             return of(null);
           }
@@ -492,7 +502,9 @@ export class RealtimeMonitoringService implements OnDestroy {
           uptime_percent:
             typeof match['uptime_percent'] === 'number'
               ? match['uptime_percent']
-              : catalogItem.uptime_percent,
+              : match['uptime_percentage'] !== undefined
+                ? Number(match['uptime_percentage'])
+                : catalogItem.uptime_percent,
           down_since: downSince,
           last_checked_at:
             typeof match['last_checked_at'] === 'string'
@@ -505,21 +517,33 @@ export class RealtimeMonitoringService implements OnDestroy {
     let nextIncidents = current.recentIncidents;
     const rawIncidents = record['recent_incidents'];
     if (Array.isArray(rawIncidents) && rawIncidents.length > 0) {
-      nextIncidents = (rawIncidents as Record<string, unknown>[]).map((inc, index) => ({
-        id: String(inc['id'] ?? `rest-inc-${index}`),
-        service_slug: (inc['service_slug'] as MicroserviceSlug) ?? 'core',
-        service_name: String(inc['service_name'] ?? 'Microservice Wavre'),
-        container_name: String(inc['container_name'] ?? 'wavre-ms-container'),
-        previous_status: (inc['previous_status'] as ServiceStatus) ?? 'UP',
-        new_status: (inc['new_status'] as ServiceStatus) ?? 'DOWN',
-        source:
-          (inc['source'] as 'SIMULATION_UI' | 'DOCKER_PROBE' | 'SYSTEM_RECOVERY') ??
-          'DOCKER_PROBE',
-        reason: String(inc['reason'] ?? 'Changement dâ€™Ã©tat dÃ©tectÃ© par la sonde Docker'),
-        occurred_at: String(inc['occurred_at'] ?? new Date().toISOString()),
-        duration_seconds:
-          typeof inc['duration_seconds'] === 'number' ? inc['duration_seconds'] : null,
-      }));
+      nextIncidents = (rawIncidents as Record<string, unknown>[]).map((inc, index) => {
+        const slug = ((inc['service_slug'] ?? inc['microservice_slug']) as MicroserviceSlug) ?? 'core';
+        const name = String(inc['service_name'] ?? inc['microservice_name'] ?? 'Microservice Wavre');
+        const container = String(inc['container_name'] ?? `wavre-ms-${slug}`);
+        const sourceVal = String(inc['trigger_source'] ?? inc['source'] ?? 'DOCKER_PROBE');
+        const reasonVal = String(inc['message'] ?? inc['reason'] ?? 'Changement d’état détecté par la sonde Docker');
+        const occurredAtVal = String(inc['created_at'] ?? inc['occurred_at'] ?? new Date().toISOString());
+        const durationVal =
+          typeof inc['downtime_duration_seconds'] === 'number'
+            ? inc['downtime_duration_seconds']
+            : typeof inc['duration_seconds'] === 'number'
+              ? inc['duration_seconds']
+              : null;
+
+        return {
+          id: String(inc['id'] ?? `rest-inc-${index}`),
+          service_slug: slug,
+          service_name: name,
+          container_name: container,
+          previous_status: (inc['previous_status'] as ServiceStatus) ?? 'UP',
+          new_status: (inc['new_status'] as ServiceStatus) ?? 'DOWN',
+          source: (sourceVal as 'SIMULATION_UI' | 'DOCKER_PROBE' | 'SYSTEM_RECOVERY'),
+          reason: reasonVal,
+          occurred_at: occurredAtVal,
+          duration_seconds: durationVal,
+        };
+      });
     }
 
     this.dashboardState.set({

@@ -1,11 +1,11 @@
 <!--
   ============================================================================
-  VILLE DE WAVRE â€” Ã‰CRAN MURAL TV DE SUPERVISION (WALLBOARD NOC)
+  VILLE DE WAVRE — ÉCRAN MURAL TV DE SUPERVISION (WALLBOARD NOC)
   ============================================================================
-  Interface haute visibilitÃ© conÃ§ue pour l'Ã©quipe IT de la Ville de Wavre :
-   1. Halo rouge pulsÃ© sur tout le cadre de l'Ã©cran dÃ¨s qu'un service est DOWN
-   2. Bandeau d'alerte critique clignotant (@keyframes alertPulse) avec chronomÃ¨tre
-   3. Indicateur : ðŸ”„ Supervision HTTP REST Active â€¢ Sonde Docker toutes les 2s
+  Interface haute visibilité conçue pour l'équipe IT de la Ville de Wavre :
+   1. Halo rouge pulsé sur tout le cadre de l'écran dès qu'un service est DOWN
+   2. Bandeau d'alerte critique clignotant (@keyframes alertPulse) avec chronomètre
+   3. Indicateur : 🔄 Supervision HTTP REST Active • Sonde Docker toutes les 2s
    4. Grille des 5 microservices Docker (core, mailing, carto, voirie, salle)
    5. Journal chronologique des incidents en direct (recent_incidents)
   ============================================================================
@@ -13,75 +13,75 @@
 <div class="wallboard-viewport" [class.wallboard-critical-halo]="hasDownService">
 
   <!-- ========================================================================
-       1. BANDEAU D'ALERTE VISUELLE IMMÃ‰DIATE (MODE INCIDENT CRITIQUE)
-       S'affiche instantanÃ©ment dÃ¨s qu'au moins un microservice passe Ã  DOWN
+       1. BANDEAU D'ALERTE VISUELLE IMMÉDIATE (MODE INCIDENT CRITIQUE)
+       S'affiche instantanément dès qu'au moins un microservice passe à DOWN
        ======================================================================== -->
   <section class="critical-alert-banner" *ngIf="hasDownService" role="alert" aria-live="assertive">
     <div class="critical-alert-top">
       <div class="critical-siren-badge">
-        <span class="siren-icon">ðŸš¨</span>
+        <span class="siren-icon">🚨</span>
         <span class="siren-count">{{ downServices.length }} / 5 MICROSERVICE(S) EN PANNE (DOWN)</span>
       </div>
 
-      <!-- Mention spÃ©ciale exigÃ©e si le microservice CORE (Interface Client) est coupÃ© -->
+      <!-- Mention spéciale exigée si le microservice CORE (Interface Client) est coupé -->
       <div class="core-critical-callout" *ngIf="isCoreServiceDown">
-        âš ï¸ ALERTE CRITIQUE GLOBALE : LE MICROSERVICE CORE (INTERFACE CLIENT) EST COUPÃ‰
+        ⚠️ ALERTE CRITIQUE GLOBALE : LE MICROSERVICE CORE (INTERFACE CLIENT) EST COUPÉ
       </div>
 
-      <!-- Bouton rapide d'acquittement et de rÃ©tablissement global -->
+      <!-- Bouton rapide d'acquittement et de rétablissement global -->
       <button
         type="button"
         class="btn-recover-all"
         (click)="recoverAllImmediately()"
-        title="RedÃ©marrer et reconnecter tous les conteneurs Docker immÃ©diatement">
-        ðŸŸ¢ RÃ©tablir tous les services immÃ©diatement
+        title="Redémarrer et reconnecter tous les conteneurs Docker immédiatement">
+        🟢 Rétablir tous les services immédiatement
       </button>
     </div>
 
-    <!-- Liste des services dÃ©connectÃ©s avec leur chronomÃ¨tre de panne en direct -->
+    <!-- Liste des services déconnectés avec leur chronomètre de panne en direct -->
     <div class="critical-down-list">
       <div class="down-service-pill" *ngFor="let downItem of downServices; trackBy: trackByServiceSlug">
         <span class="down-pill-led"></span>
         <strong class="down-pill-name">{{ downItem.name }}</strong>
         <code class="down-pill-container">{{ downItem.container_name }}:{{ downItem.port }}</code>
         <span class="down-pill-timer">
-          â±ï¸ DurÃ©e de panne : <strong>{{ formatDowntimeStopwatch(downItem.down_since) }}</strong>
+          ⏱️ Durée de panne : <strong>{{ formatDowntimeStopwatch(downItem.down_since) }}</strong>
         </span>
       </div>
     </div>
   </section>
 
   <!-- ========================================================================
-       2. EN-TÃŠTE OFFICIEL NOC : VILLE DE WAVRE + INDICATEUR SUPERVISION HTTP REST
+       2. EN-TÊTE OFFICIEL NOC : VILLE DE WAVRE + INDICATEUR SUPERVISION HTTP REST
        ======================================================================== -->
   <header class="wallboard-header">
     <div class="brand-block">
       <div class="wavre-crest" [class.crest-alert]="hasDownService">
         <span class="crest-code">WAVRE</span>
-        <span class="crest-sub">IT â€¢ NOC</span>
+        <span class="crest-sub">IT • NOC</span>
       </div>
       <div class="brand-titles">
         <div class="official-overline">
-          ADMINISTRATION COMMUNALE DE WAVRE â€¢ ARCHITECTURE DOCKER &amp; LARAVEL 12
+          ADMINISTRATION COMMUNALE DE WAVRE • ARCHITECTURE DOCKER &amp; LARAVEL 12
         </div>
         <h1 class="wallboard-main-title">
-          VILLE DE WAVRE â€” SUPERVISION DES MICROSERVICES DOCKER
+          VILLE DE WAVRE — SUPERVISION DES MICROSERVICES DOCKER
         </h1>
 
         <!-- Indicateur simple et lisible de supervision HTTP REST toutes les 2 secondes -->
         <div class="rest-status-bar">
           <span class="rest-live-dot" [class.rest-live-active]="pollingState.isPolling"></span>
-          <span class="rest-status-title">ðŸ”„ Supervision HTTP REST Active â€¢ Sonde Docker toutes les 2s</span>
+          <span class="rest-status-title">🔄 Supervision HTTP REST Active • Sonde Docker toutes les 2s</span>
           <span class="rest-badge-ok">API {{ pollingState.apiLatencyMs }} ms</span>
-          <span class="rest-events-counter mono">â€¢ Cycle #{{ pollingState.pollCount }}</span>
+          <span class="rest-events-counter mono">• Cycle #{{ pollingState.pollCount }}</span>
         </div>
       </div>
     </div>
 
-    <!-- Indicateurs globaux (KPIs) lisibles Ã  10 mÃ¨tres sur Ã©cran TV -->
+    <!-- Indicateurs globaux (KPIs) lisibles à 10 mètres sur écran TV -->
     <div class="header-kpis">
       <div class="kpi-box kpi-up">
-        <span class="kpi-label">OPÃ‰RATIONNELS (UP)</span>
+        <span class="kpi-label">OPÉRATIONNELS (UP)</span>
         <span class="kpi-value">{{ upServices.length }}<small>/5</small></span>
       </div>
       <div class="kpi-box kpi-degraded" [class.kpi-degraded-active]="degradedServices.length > 0">
@@ -109,9 +109,9 @@
   <main class="wallboard-main-grid">
     <section class="microservices-section">
       <div class="section-title-bar">
-        <h2>Ã‰TAT EN TEMPS RÃ‰EL DES 5 CONTENEURS DOCKER DE LA VILLE DE WAVRE</h2>
+        <h2>ÉTAT EN TEMPS RÉEL DES 5 CONTENEURS DOCKER DE LA VILLE DE WAVRE</h2>
         <span class="section-subtitle">
-          Cliquez sur les boutons de simulation de n'importe quelle carte pour tester la dÃ©tection immÃ©diate des pannes
+          Cliquez sur les boutons de simulation de n'importe quelle carte pour tester la détection immédiate des pannes
         </span>
       </div>
 
@@ -124,7 +124,7 @@
           [class.ms-card-down]="service.status === 'DOWN'"
           [class.ms-card-critical-core]="service.is_critical">
 
-          <!-- En-tÃªte de la carte : LED animÃ©e + Nom + Badge CRITIQUE + Statut -->
+          <!-- En-tête de la carte : LED animée + Nom + Badge CRITIQUE + Statut -->
           <div class="ms-card-header">
             <div class="ms-led-wrapper">
               <span
@@ -136,11 +136,11 @@
               <div class="ms-title-group">
                 <div class="ms-title-row">
                   <h3 class="ms-name">{{ service.name }}</h3>
-                  <span class="badge-critical" *ngIf="service.is_critical">CRITIQUE â€¢ FRONTEND CITOYEN</span>
+                  <span class="badge-critical" *ngIf="service.is_critical">CRITIQUE • FRONTEND CITOYEN</span>
                 </div>
                 <div class="ms-docker-meta mono">
-                  <span>ðŸ³ {{ service.container_name }}</span>
-                  <span class="meta-sep">â€¢</span>
+                  <span>🐳 {{ service.container_name }}</span>
+                  <span class="meta-sep">•</span>
                   <span>Port :{{ service.port }}</span>
                 </div>
               </div>
@@ -155,20 +155,20 @@
             </div>
           </div>
 
-          <!-- RÃ´le mÃ©tier exact du microservice au sein de la Ville de Wavre -->
+          <!-- Rôle métier exact du microservice au sein de la Ville de Wavre -->
           <p class="ms-role-description">
             {{ service.role_description }}
           </p>
 
-          <!-- Bandeau chronomÃ¨tre de panne localisÃ© sur la carte si le service est DOWN -->
+          <!-- Bandeau chronomètre de panne localisé sur la carte si le service est DOWN -->
           <div class="ms-card-outage-strip" *ngIf="service.status === 'DOWN'">
-            <span class="outage-icon">ðŸš¨ CONTENEUR DÃ‰CONNECTÃ‰</span>
+            <span class="outage-icon">🚨 CONTENEUR DÉCONNECTÉ</span>
             <span class="outage-stopwatch mono">
-              DurÃ©e coupure : {{ formatDowntimeStopwatch(service.down_since) }}
+              Durée coupure : {{ formatDowntimeStopwatch(service.down_since) }}
             </span>
           </div>
 
-          <!-- MÃ©triques techniques du conteneur (Latence, DisponibilitÃ© SLA, CPU, RAM) -->
+          <!-- Métriques techniques du conteneur (Latence, Disponibilité SLA, CPU, RAM) -->
           <div class="ms-metrics-grid">
             <div class="metric-cell">
               <span class="metric-label">LATENCE HTTP</span>
@@ -180,12 +180,12 @@
               </span>
             </div>
             <div class="metric-cell">
-              <span class="metric-label">DISPONIBILITÃ‰ SLA</span>
+              <span class="metric-label">DISPONIBILITÉ SLA</span>
               <span class="metric-val mono">{{ service.uptime_percent }}%</span>
             </div>
             <div class="metric-cell">
               <span class="metric-label">CHARGE CPU / RAM</span>
-              <span class="metric-val mono">{{ service.cpu_usage_percent }}% â€¢ {{ service.memory_mb }} Mo</span>
+              <span class="metric-val mono">{{ service.cpu_usage_percent }}% • {{ service.memory_mb }} Mo</span>
             </div>
             <div class="metric-cell metric-cell-full">
               <span class="metric-label">SONDE DOCKER</span>
@@ -194,7 +194,7 @@
           </div>
 
           <!-- ================================================================
-               BOUTONS DE SIMULATION EXIGÃ‰S PAR L'Ã‰NONCÃ‰ DE LA VILLE DE WAVRE
+               BOUTONS DE SIMULATION EXIGÉS PAR L'ÉNONCÉ DE LA VILLE DE WAVRE
                ================================================================ -->
           <div class="ms-simulation-actions">
             <span class="sim-label">SIMULATION EN DIRECT (JURY) :</span>
@@ -204,7 +204,7 @@
                 class="btn-sim btn-sim-down"
                 [disabled]="service.status === 'DOWN'"
                 (click)="simulateStatus(service.slug, 'DOWN')">
-                Simuler DÃ©connexion (DOWN)
+                Simuler Déconnexion (DOWN)
               </button>
 
               <button
@@ -234,7 +234,7 @@
     <aside class="incidents-sidebar">
       <div class="incidents-header">
         <h2>JOURNAL DES INCIDENTS EN DIRECT</h2>
-        <span class="incidents-count mono">{{ recentIncidents.length }} Ã©vÃ©nement(s)</span>
+        <span class="incidents-count mono">{{ recentIncidents.length }} événement(s)</span>
       </div>
 
       <div class="incidents-feed">
@@ -253,7 +253,7 @@
               [class.trans-down]="inc.new_status === 'DOWN'"
               [class.trans-degraded]="inc.new_status === 'DEGRADED'"
               [class.trans-up]="inc.new_status === 'UP'">
-              {{ inc.previous_status }} âž” {{ inc.new_status }}
+              {{ inc.previous_status }} ➔ {{ inc.new_status }}
             </span>
           </div>
 
@@ -265,7 +265,7 @@
           <p class="incident-reason">{{ inc.reason }}</p>
 
           <div class="incident-duration-badge" *ngIf="inc.duration_seconds !== null">
-            â±ï¸ DurÃ©e totale de la coupure avant rÃ©tablissement :
+            ⏱️ Durée totale de la coupure avant rétablissement :
             <strong>{{ formatSecondsToReadableDuration(inc.duration_seconds) }}</strong>
           </div>
         </div>
