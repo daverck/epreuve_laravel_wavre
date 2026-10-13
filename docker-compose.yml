@@ -78,12 +78,13 @@ services:
   # 3. FRONTEND WALLBOARD (Angular + CSS Moderne)
   # ==========================================================================
   frontend:
-    image: node:20-alpine
+    image: node:20-slim
     container_name: wavre-frontend-wallboard
     restart: unless-stopped
     working_dir: /app
     volumes:
       - ./frontend:/app
+      - /app/node_modules
     ports:
       - "4200:4200"
     command: sh -c "if [ ! -d node_modules/@angular/core ]; then npm install; fi && exec npm start"
